@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { Body } from './physics.js';
+import { BodyYaw } from './bodyyaw.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const P = CONFIG.player;
@@ -31,6 +32,7 @@ export class Player {
     this.dip = 0; this.dipVel = 0; this.roll = 0;
     this.fov = CONFIG.camera.fov;
     this.thirdPerson = false;
+    this.bodyYaw = new BodyYaw(0);          // camera-independent body facing
 
     this.eyePos = new THREE.Vector3();     // first-person eye position (used for aiming)
     this.aimDir = new THREE.Vector3(0, 0, -1);
@@ -149,13 +151,22 @@ export class Player {
     // character body follows the physics body
     const ch = this.character;
     ch.root.position.set(b.pos.x, b.pos.y, b.pos.z);
-    ch.root.rotation.y = this.yaw;
+    ch.root.rotation.y = this.bodyYaw.update(this.yaw, hs, dt);
     ch.animateFeet(this.phase, this.moveAmt, !grounded, dt);
 
     const v = this.viewState;
     v.move = this.moveAmt; v.run = this.runAmt; v.phase = this.phase;
     v.vy = b.vel.y; v.grounded = grounded; v.dYaw = dYaw; v.dPitch = dPitch;
     return v;
+  }
+
+  // Used by multiplayer to place the player at a spawn slot.
+  teleport(x, z, yaw = this.targetYaw) {
+    const b = this.body;
+    b.pos.set(x, 0, z); b.vel.set(0, 0, 0); b.stepOffset = 0;
+    this.yaw = this.targetYaw = yaw;
+    this.bodyYaw.snap(yaw);
+    b.updateBounds();
   }
 
   toggleThirdPerson() {

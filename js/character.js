@@ -52,14 +52,29 @@ export class Character {
     this.firstPerson = true;
     this._air = 0;
     this._feetRest = [parts.footR.position.clone(), parts.footL.position.clone()];
+    this._handRest = [parts.handR.position.clone(), parts.handL.position.clone()];   // model units
     this.setFirstPerson(true);
   }
 
+  // Loads the GLB once. A pristine copy is kept so remote players can be cloned later,
+  // even after the local player's hands have been re-parented onto the camera.
   static async load(url, onProgress) {
     const gltf = await new GLTFLoader().loadAsync(url, (e) => {
       if (e.total) onProgress?.(e.loaded / e.total);
     });
-    const scene = gltf.scene;
+    Character._template = gltf.scene.clone(true);
+    return Character._fromScene(gltf.scene);
+  }
+
+  // A complete, independent character for another player (same model, shared geometry/materials).
+  static createRemote() {
+    if (!Character._template) throw new Error('Character.load() must finish before createRemote()');
+    const c = Character._fromScene(Character._template.clone(true));
+    c.setFirstPerson(false);                 // others see the whole body: head + torso + hands + feet
+    return c;
+  }
+
+  static _fromScene(scene) {
     scene.updateMatrixWorld(true);
 
     const parts = findParts(scene);

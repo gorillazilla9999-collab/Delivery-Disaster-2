@@ -37,3 +37,49 @@ body.menu-open #hint { opacity: 0; }
   gap: 4px 14px; text-align: left; font-size: 13px; color: #333; }
 #controls b { color: #e8432e; }
 [hidden] { display: none !important; }
+
+/* ---------- multiplayer ---------- */
+#mp { margin: 14px 0 4px; padding: 12px; text-align: left; background: #fff; border: 3px solid #1b1b1b; border-radius: 12px; }
+.mp-status { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #333; }
+.mp-status i { width: 11px; height: 11px; border-radius: 50%; background: #ffb400; border: 2px solid #1b1b1b; flex: none; }
+.mp-status[data-state="connected"] i { background: #3bb54a; }
+.mp-status[data-state="error"] i, .mp-status[data-state="unavailable"] i { background: #e8432e; }
+.mp-status[data-state="reconnecting"] i, .mp-status[data-state="connecting"] i { animation: mp-blink 1s infinite; }
+.mp-status em { margin-left: auto; font-style: normal; font-weight: 400; color: #777; }
+@keyframes mp-blink { 50% { opacity: .25; } }
+#mp input[type=text] { width: 100%; padding: 9px 10px; font: inherit; font-size: 15px; color: #1b1b1b; background: #fff6dc;
+  border: 3px solid #1b1b1b; border-radius: 8px; outline: none; }
+#mp input[type=text]:focus { background: #fffbe9; box-shadow: 0 0 0 3px #ffd23f; }
+#mp-lobby { display: grid; gap: 8px; margin-top: 10px; }
+#mp-code { text-transform: uppercase; letter-spacing: 4px; text-align: center; font-weight: 700; }
+.mp-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.mp-btn { padding: 9px 14px; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; color: #1b1b1b; background: #ffd23f;
+  border: 3px solid #1b1b1b; border-radius: 8px; box-shadow: 3px 3px 0 #1b1b1b; }
+.mp-btn:hover:not(:disabled) { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 #1b1b1b; }
+.mp-btn:active:not(:disabled) { transform: translate(2px,2px); box-shadow: 1px 1px 0 #1b1b1b; }
+.mp-btn:disabled { opacity: .5; cursor: not-allowed; }
+.mp-danger { margin-top: 10px; width: 100%; background: #ff8a78; }
+.mp-mini { padding: 2px 8px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; background: #fff6dc; border: 2px solid #1b1b1b; border-radius: 6px; }
+.mp-codebox { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; color: #333; }
+.mp-codebox b { font-size: 26px; letter-spacing: 5px; color: #e8432e; font-family: "Courier New", monospace; }
+.mp-count { margin: 2px 0 6px; font-size: 12px; color: #666; }
+#mp-players { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; max-height: 150px; overflow: auto; font-size: 14px; }
+#mp-players li, #rh-players li { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#mp-players li::before, #rh-players li::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: #3bb54a; border: 2px solid #1b1b1b; flex: none; }
+#mp-players li.you, #rh-players li.you { font-weight: 700; }
+#mp-players li small, #rh-players li small { color: #999; font-weight: 400; }
+#mp-msg { margin: 8px 0 0; padding: 7px 9px; font-size: 13px; color: #7a1208; background: #ffe1db; border: 2px solid #e8432e; border-radius: 8px; }
+#mp-msg.info { color: #1d4d24; background: #e0f6e3; border-color: #3bb54a; }
+
+#roomhud { position: fixed; top: 10px; right: 12px; min-width: 130px; padding: 8px 10px; font-size: 12px; color: #fff; pointer-events: none;
+  background: rgba(0,0,0,.5); border-radius: 8px; z-index: 5; }
+#roomhud .rh-code { margin-bottom: 4px; letter-spacing: 1px; }
+#roomhud .rh-code b { color: #ffd23f; font-family: "Courier New", monospace; font-size: 15px; letter-spacing: 3px; }
+#rh-players { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-width: 170px; }
+body.menu-open #roomhud { opacity: 0; }
+#toasts { position: fixed; top: 10px; left: 12px; display: grid; gap: 4px; pointer-events: none; z-index: 20; }
+.toast { padding: 6px 10px; font-size: 13px; color: #fff; background: rgba(0,0,0,.55); border-left: 4px solid #ffd23f; border-radius: 6px; animation: toast-in .2s ease-out; }
+.toast.join { border-color: #3bb54a; } .toast.leave { border-color: #ffb400; } .toast.error { border-color: #e8432e; }
+.toast.out { opacity: 0; transition: opacity .4s; }
+@keyframes toast-in { from { transform: translateX(-12px); opacity: 0; } }
+@media (max-width: 480px) { #mp-players { grid-template-columns: 1fr; } }

@@ -14,15 +14,34 @@
     }
   }
   </script>
+  <!-- Shown only when the page is opened without a web server (file://), where modules/models cannot load. -->
+  <script>
+    if (location.protocol === 'file:') {
+      document.addEventListener('DOMContentLoaded', function () {
+        document.body.innerHTML =
+          '<div style="font-family:sans-serif;max-width:560px;margin:60px auto;padding:24px;background:#fff6dc;border:4px solid #1b1b1b;border-radius:16px;line-height:1.5">' +
+          '<h2 style="margin-top:0">Almost there - this needs a local server</h2>' +
+          '<p>You opened <code>index.html</code> directly, which browsers block for games like this.</p>' +
+          '<p><b>Easy way:</b> extract the zip fully, then double-click <code>start.command</code> (Mac) or <code>start.bat</code> (Windows).</p>' +
+          '<p><b>Manual:</b> open a terminal in this folder and run <code>npm install</code> then <code>npm start</code>, then go to <code>http://localhost:3000</code>.</p></div>';
+      });
+    }
+  </script>
 </head>
 <body>
   <canvas id="game"></canvas>
   <div id="crosshair"></div>
 
+  <div id="roomhud" hidden>
+    <div class="rh-code">ROOM <b id="rh-code">-----</b></div>
+    <ul id="rh-players"></ul>
+  </div>
+  <div id="toasts"></div>
+
   <div id="hint">
     <b>WASD</b> move &middot; <b>Shift</b> run &middot; <b>Space</b> jump &middot;
     <b>LMB / RMB</b> left / right hand &middot; hold <b>E</b> reach &middot;
-    <b>V</b> third-person debug &middot; <b>Esc</b> menu
+    <b>V</b> third-person debug &middot; <b>Esc</b> menu / multiplayer
   </div>
 
   <div id="overlay">
@@ -32,6 +51,24 @@
       <div id="loadbar"><div id="loadfill"></div></div>
       <button id="play" hidden>Click to play</button>
       <p id="error" hidden></p>
+      <div id="mp">
+        <div id="mp-status" class="mp-status" data-state="connecting"><i></i><span>Connecting&hellip;</span><em id="mp-ping"></em></div>
+        <div id="mp-lobby">
+          <input id="mp-name" type="text" maxlength="16" placeholder="Your name" autocomplete="off" spellcheck="false">
+          <button id="mp-create" class="mp-btn" disabled>Create Room</button>
+          <div class="mp-row">
+            <input id="mp-code" type="text" maxlength="5" placeholder="ROOM CODE" autocomplete="off" spellcheck="false">
+            <button id="mp-join" class="mp-btn" disabled>Join Room</button>
+          </div>
+        </div>
+        <div id="mp-room" hidden>
+          <div class="mp-codebox">Room code <b id="mp-roomcode">-----</b> <button id="mp-copy" class="mp-mini" type="button">Copy</button></div>
+          <div class="mp-count"><span id="mp-count">1</span> / <span id="mp-max">12</span> players</div>
+          <ul id="mp-players"></ul>
+          <button id="mp-leave" class="mp-btn mp-danger">Leave Room</button>
+        </div>
+        <p id="mp-msg" hidden></p>
+      </div>
       <div id="settings">
         <label for="sens">Mouse sensitivity <output id="sensval">1.0</output></label>
         <input id="sens" type="range" min="0.2" max="3" step="0.05" value="1">

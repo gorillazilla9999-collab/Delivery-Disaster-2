@@ -1,14 +1,32 @@
-# Delivery Disaster — Prompt 1: Player & First-Person Movement
+# Delivery Disaster — Prompt 1: Movement + Prompt 2: Online Multiplayer
 
 ## Run it
-Browsers block model loading from `file://`, so serve the folder:
+```
+npm install
+npm start            # http://localhost:3000   (or double-click start.command / start.bat)
+```
+Open it in two or more browser windows. Create a room in one, join with the 5-character code in the others.
+Single-player still works with a plain static server (`python3 -m http.server 8000`); the multiplayer badge then says it is unavailable.
+Three.js r160 loads from the jsDelivr CDN, so you need an internet connection. Render deployment: see `DEPLOY_RENDER.md`.
 
+## Multiplayer
+- Esc opens the menu: name, **Create Room**, room code + **Join Room**, player list, connection status, **Leave Room**.
+- 1-12 players per room, rooms are isolated (the server only relays state inside a room), unique 5-char codes.
+- Everyone's position, look direction, walk/run/jump state, hand pokes (LMB/RMB) and reaching (E) are synced at 20 Hz
+  and interpolated ~120 ms behind; other players are full copies of `person.glb` (head, torso, floating hands and feet).
+- The body turns independently of the camera (it follows you when you move, and is dragged along beyond a neck limit).
+- Dropped connections auto-reconnect and rejoin the same room if it still exists.
+
+## Extra files
 ```
-cd delivery-disaster
-python3 -m http.server 8000      # or: npx serve
+server/server.js    Express (static + /healthz + /config.js) + Socket.IO
+server/rooms.js     room manager (codes, 12-player cap, validation)  -- npm test
+js/net.js           Socket.IO client, reconnect/rejoin, clock sync
+js/remote.js        remote avatars + snapshot interpolation + hand/feet animation
+js/bodyyaw.js       camera-independent body rotation
+js/multiplayer-ui.js menu panel, room HUD, join/leave toasts
+render.yaml, DEPLOY_RENDER.md, .env.example
 ```
-Open http://localhost:8000, click **Click to play**.
-(Three.js r160 loads from the jsDelivr CDN, so you need an internet connection.)
 
 ## Controls
 | Key | Action |

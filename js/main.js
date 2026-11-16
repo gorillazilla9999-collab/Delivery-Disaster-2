@@ -1,4 +1,4 @@
-// Delivery Disaster - Prompt 1: player & first-person movement.
+// Delivery Disaster - first-person movement + online multiplayer (Prompt 2).
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { Input } from './input.js';
@@ -8,12 +8,15 @@ import { Character } from './character.js';
 import { FirstPersonHands } from './hands.js';
 import { Player } from './player.js';
 import { UI } from './ui.js';
+import { RemotePlayers } from './remote.js';
+import { Net } from './net.js';
+import { MultiplayerUI } from './multiplayer-ui.js';
 
 async function main() {
   const ui = new UI();
 
   if (location.protocol === 'file:') {
-    ui.showError('Browsers block loading models from <code>file://</code>. Start a local server in this folder, e.g. <code>python3 -m http.server 8000</code>, then open <code>http://localhost:8000</code>.');
+    ui.showError('Browsers block loading models from <code>file://</code>. Start the game server in this folder with <code>npm install</code> then <code>npm start</code> and open <code>http://localhost:3000</code> (or use <code>python3 -m http.server 8000</code> for single-player only).');
     return;
   }
 
@@ -63,6 +66,48 @@ async function main() {
     }
   };
 
+  // --- multiplayer ---
+  const remotes = new RemotePlayers(scene);
+  const net = new Net(remotes);
+  const mpUI = new MultiplayerUI();
+  let needSpawn = false;
+
+  net.onStatus = (state, text) => mpUI.setStatus(state, text);
+  net.onNotice = (text, kind) => mpUI.toast(text, kind);
+  net.onRoom = (room, info = {}) => {
+    mpUI.setRoom(room);
+    if (room) {
+      needSpawn = !info.rejoined;
+      if (info.created) mpUI.toast(`Room ${room.code} created - share the code!`, 'join');
+      else if (!info.rejoined) mpUI.toast(`Joined room ${room.code}`, 'join');
+    } else {
+      if (info.left) mpUI.toast('You left the room', 'info');
+      if (info.lostConnection) mpUI.showMessage('Connection lost - trying to rejoin your room…', 'error');
+      if (info.rejoinFailed) mpUI.showMessage('Could not rejoin your room (it may have closed or filled up).', 'error');
+    }
+  };
+  net.onRoster = (players, hostId) => {
+    mpUI.setRoster(players, net.myId, net.room && net.room.max);
+    if (needSpawn && net.room) {                // spread players around the spawn so nobody stacks
+      needSpawn = false;
+      const i = Math.max(0, players.findIndex((p) => p.id === net.myId));
+      const a = (i / Math.max(1, net.maxPlayers)) * Math.PI * 2;
+      const r = i === 0 ? 0 : 2.6;
+      player.teleport(CONFIG.player.spawn[0] + Math.cos(a) * r, CONFIG.player.spawn[2] + Math.sin(a) * r, 0);
+    }
+  };
+  mpUI.onCreate = async (name) => {
+    const res = await net.createRoom(name);
+    if (!res.ok) mpUI.showMessage(res.message || 'Could not create room.');
+  };
+  mpUI.onJoin = async (code, name) => {
+    const res = await net.joinRoom(code, name);
+    if (!res.ok) mpUI.showMessage(res.message || 'Could not join room.');
+  };
+  mpUI.onLeave = () => net.leaveRoom();
+  net.init().catch((e) => { console.error(e); mpUI.setStatus('unavailable', 'Multiplayer unavailable'); });
+  setInterval(() => mpUI.setPing(net.socket && net.socket.connected ? net.pingMs : null), 2000);
+
   // --- pointer lock / menu ---
   ui.onRequestPlay(() => input.lock());
   input.onLockChange = (locked) => { if (locked) ui.hide(); else ui.showPaused(); };
@@ -70,7 +115,7 @@ async function main() {
   ui.showReady();
 
   // debug handles for the console
-  window.DD = { scene, camera, character, hands, player, physics, world, input };
+  window.DD = { scene, camera, character, hands, player, physics, world, input, net, remotes };
 
   // --- main loop ---
   let last = performance.now();
@@ -83,8 +128,8 @@ async function main() {
 
     // one-shot actions
     if (input.pressed('KeyV')) player.toggleThirdPerson();
-    if (input.pressed('Mouse0')) hands.poke('left');
-    if (input.pressed('Mouse2')) hands.poke('right');
+    if (input.pressed('Mouse0') && hands.poke('left')) net.sendAction('poke', 'left');
+    if (input.pressed('Mouse2') && hands.poke('right')) net.sendAction('poke', 'right');
     hands.setReaching(input.down('KeyE'));
 
     // physics in small substeps for stable collisions
@@ -106,6 +151,16 @@ async function main() {
     const target = hit && hit.body && hit.body.dynamic && hit.dist <= CONFIG.interaction.reach ? hit.body : null;
     world.setHighlight(target);
     ui.setReach(!!target);
+
+    // multiplayer: publish our state, advance the interpolated remote players
+    if (net.inRoom) {
+      const b = player.body;
+      net.sendState({
+        x: b.pos.x, y: b.pos.y, z: b.pos.z, yaw: player.yaw, pitch: player.pitch,
+        speed: Math.hypot(b.vel.x, b.vel.z), vy: b.vel.y, grounded: b.onGround, reaching: hands.reaching,
+      });
+    }
+    net.updateRemotes(dt);
 
     world.update(dt, player.body.pos, camera, (now - clock0) / 1000);
     renderer.render(scene, camera);

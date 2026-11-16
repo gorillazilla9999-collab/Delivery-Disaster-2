@@ -1,0 +1,15 @@
+# Render Blueprint: one Web Service serves the game files AND the Socket.IO server.
+services:
+  - type: web
+    name: delivery-disaster
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: MAX_PLAYERS
+        value: 12
