@@ -23,6 +23,9 @@ export class Body {
     this.stepHeight = 0;      // > 0 lets the body walk up small ledges
     this.stepOffset = 0;      // visual offset used to smooth step-ups (read by the camera)
     this.onGround = false;
+    this.noGravity = false;   // true while carried: velocity is driven by the carrier, no gravity/friction
+    this.ignore = null;       // a body this one passes through (the carrier)
+    this.rayIgnore = false;   // raycasts skip this body (carried crate)
     this.mesh = null;
     this.updateBounds();
   }
@@ -31,6 +34,8 @@ export class Body {
     this.max.set(this.pos.x + this.hx, this.pos.y + this.h, this.pos.z + this.hz);
   }
 }
+
+function passes(a, b) { return a.ignore === b || b.ignore === a; }
 
 function overlaps(a, b) {
   return a.min.x < b.max.x - EPS && a.max.x > b.min.x + EPS &&
@@ -72,8 +77,8 @@ export class PhysicsWorld {
     const g = CONFIG.physics.gravity;
     for (const b of this.dynamics) {
       if (b.kinematic) continue;
-      b.vel.y = Math.max(b.vel.y - g * dt, -CONFIG.physics.terminalVelocity);
-      if (!b.isPlayer && b.onGround) {
+      if (!b.noGravity) b.vel.y = Math.max(b.vel.y - g * dt, -CONFIG.physics.terminalVelocity);
+      if (!b.isPlayer && b.onGround && !b.noGravity) {
         const sp = Math.hypot(b.vel.x, b.vel.z);
         if (sp > 0) {
           const ns = Math.max(0, sp - b.friction * dt);
@@ -99,7 +104,7 @@ export class PhysicsWorld {
   }
 
   _blocked(b) {
-    for (const c of this.all) if (c !== b && overlaps(b, c)) return true;
+    for (const c of this.all) if (c !== b && !passes(b, c) && overlaps(b, c)) return true;
     return false;
   }
 
@@ -110,7 +115,7 @@ export class PhysicsWorld {
     b.updateBounds();
 
     for (const c of this.all) {
-      if (c === b || !overlaps(b, c)) continue;
+      if (c === b || passes(b, c) || !overlaps(b, c)) continue;
 
       // Walk up small ledges / stairs.
       const rise = c.max.y - b.pos.y;
@@ -148,7 +153,7 @@ export class PhysicsWorld {
     b.updateBounds();
 
     for (const c of this.all) {
-      if (c === b || !overlaps(b, c)) continue;
+      if (c === b || passes(b, c) || !overlaps(b, c)) continue;
       if (prevY >= c.max.y - 0.02) {                    // landed on top
         b.pos.y = c.max.y;
         if (b.vel.y < 0) b.vel.y = 0;
@@ -175,7 +180,7 @@ export class PhysicsWorld {
   raycast(origin, dir, maxDist, ignore = null) {
     let best = null;
     for (const c of this.all) {
-      if (c === ignore) continue;
+      if (c === ignore || c.rayIgnore) continue;
       const t = rayBox(origin, dir, c.min, c.max);
       if (t !== null && t <= maxDist && (!best || t < best.dist)) best = { body: c, dist: t };
     }

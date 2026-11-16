@@ -90,6 +90,17 @@ export class CrateSync {
     this.physics.applyImpulse(b, { x: d.d[0], y: d.d[1], z: d.d[2] }, d.m);
   }
 
+  // Carrying: the carrier claims the crate immediately and keeps streaming it until it is dropped.
+  hold(body) {
+    const i = this.indexOf(body); if (i < 0) return;
+    const s = this.st[i];
+    s.owner = 'me'; s.rest = 0; s.dirty = true; s.held = true;
+  }
+  unhold(body) {
+    const i = this.indexOf(body); if (i < 0) return;
+    this.st[i].held = false; this.st[i].rest = 0;
+  }
+
   // Poke on a crate: if somebody else owns it, ask the owner to apply it; otherwise apply locally.
   poke(body, dir, magnitude) {
     const i = this.indexOf(body);
@@ -135,8 +146,9 @@ export class CrateSync {
           s.owner = 'me'; s.rest = 0; s.dirty = true;
         } else return;
       }
-      if (speed < REST_SPEED && b.onGround) s.rest += dt; else s.rest = 0;
-      if (s.rest > REST_TIME) {                                                         // settled: let go
+      if (s.held) { s.rest = 0; s.dirty = true; }                                       // carried: never release, always stream
+      else if (speed < REST_SPEED && b.onGround) s.rest += dt; else s.rest = 0;
+      if (!s.held && s.rest > REST_TIME) {                                                         // settled: let go
         out.push([i, r3(b.pos.x), r3(b.pos.y), r3(b.pos.z), 0, 0, 0, 1]);
         s.owner = null; s.rest = 0; s.lastSent = null; s.dirty = false;
         return;

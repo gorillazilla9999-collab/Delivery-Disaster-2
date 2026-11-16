@@ -58,6 +58,47 @@ async function main() {
   const hands = new FirstPersonHands(camera, character);
   const player = new Player({ camera, physics, character, hands, input, getSensitivity: () => ui.sensitivity });
 
+  // --- carrying (press E to pick up / put down, click while carrying to throw) ---
+  let held = null;
+  const dropCrate = (throwIt = false) => {
+    if (!held) return;
+    const b = held;
+    held = null;
+    b.noGravity = false; b.ignore = null; b.rayIgnore = false;
+    crateSync.unhold(b);
+    b.vel.set(0, 0, 0);
+    if (throwIt) {
+      const t = CONFIG.carry.throwSpeed / Math.max(1, Math.sqrt(b.mass));
+      b.vel.set(player.aimDir.x * t + player.body.vel.x, player.aimDir.y * t + 1.5, player.aimDir.z * t + player.body.vel.z);
+    } else {
+      b.vel.x = player.body.vel.x * 0.5; b.vel.z = player.body.vel.z * 0.5;
+    }
+  };
+  const pickUp = () => {
+    const hit = physics.raycast(player.eyePos, player.aimDir, CONFIG.interaction.reach, player.body);
+    const b = hit && hit.body;
+    if (!b || !b.dynamic || b.isPlayer || crateSync.indexOf(b) < 0) return;
+    if (crateSync.isRemoteOwned(b)) { mpUI.toast('Somebody else is moving that crate', 'info'); return; }
+    if (b.mass > CONFIG.carry.maxMass) return;
+    held = b;
+    b.noGravity = true; b.ignore = player.body; b.rayIgnore = true; b.onGround = false;
+    crateSync.hold(b);
+  };
+  // drive the carried crate toward a spot in front of the camera (runs every physics substep)
+  const driveHeld = () => {
+    const c = CONFIG.carry, b = held;
+    const d = c.holdGap + b.hx;
+    const tx = player.eyePos.x + player.aimDir.x * d;
+    const ty = player.eyePos.y + player.aimDir.y * d - c.holdDrop - b.h / 2;
+    const tz = player.eyePos.z + player.aimDir.z * d;
+    const k = c.gain / (1 + 0.25 * b.mass);
+    let vx = (tx - b.pos.x) * k, vy = (ty - b.pos.y) * k, vz = (tz - b.pos.z) * k;
+    const sp = Math.hypot(vx, vy, vz);
+    if (sp > c.maxSpeed) { const f = c.maxSpeed / sp; vx *= f; vy *= f; vz *= f; }
+    b.vel.set(vx, vy, vz);
+    return Math.hypot(tx - b.pos.x, ty - b.pos.y, tz - b.pos.z);
+  };
+
   // --- hand interaction ---
   hands.onImpact = (side) => {
     const hit = physics.raycast(player.eyePos, player.aimDir, CONFIG.interaction.reach, player.body);
@@ -79,6 +120,7 @@ async function main() {
   net.onNotice = (text, kind) => mpUI.toast(text, kind);
   net.onRoom = (room, info = {}) => {
     mpUI.setRoom(room);
+    if (!room || !info.rejoined) dropCrate();
     if (room) {
       if (!info.rejoined) crateSync.resetToHome();     // everybody starts from the same crate layout
       crateSync.setActive(true);
@@ -121,7 +163,7 @@ async function main() {
   ui.showReady();
 
   // debug handles for the console
-  window.DD = { scene, camera, character, hands, player, physics, world, input, net, remotes, crateSync };
+  window.DD = { get held() { return held; }, scene, camera, character, hands, player, physics, world, input, net, remotes, crateSync };
 
   // --- main loop ---
   let last = performance.now();
@@ -134,9 +176,17 @@ async function main() {
 
     // one-shot actions
     if (input.pressed('KeyV')) player.toggleThirdPerson();
-    if (input.pressed('Mouse0') && hands.poke('left')) net.sendAction('poke', 'left');
-    if (input.pressed('Mouse2') && hands.poke('right')) net.sendAction('poke', 'right');
-    hands.setReaching(input.down('KeyE'));
+    if (input.pressed('KeyE')) { if (held) dropCrate(); else pickUp(); }
+    if (held && crateSync.isRemoteOwned(held)) dropCrate();      // somebody else won the claim
+    if (held && (input.pressed('Mouse0') || input.pressed('Mouse2'))) {
+      dropCrate(true);                                           // click while carrying = throw
+      hands.poke(input.pressed('Mouse0') ? 'left' : 'right') && net.sendAction('poke', input.pressed('Mouse0') ? 'left' : 'right');
+    } else {
+      if (input.pressed('Mouse0') && hands.poke('left')) net.sendAction('poke', 'left');
+      if (input.pressed('Mouse2') && hands.poke('right')) net.sendAction('poke', 'right');
+    }
+    hands.setReaching(!!held || input.down('KeyE'));
+    hands.setGrip('left', held ? 1 : 0); hands.setGrip('right', held ? 1 : 0);
 
     // physics in small substeps for stable collisions
     crateSync.beforePhysics();
@@ -145,6 +195,7 @@ async function main() {
     const h = dt / n;
     for (let i = 0; i < n; i++) {
       player.fixedUpdate(h);
+      if (held) { const off = driveHeld(); if (off > CONFIG.carry.breakDist) { dropCrate(); } }
       physics.step(h);
       player.afterStep();
     }
@@ -156,7 +207,7 @@ async function main() {
     const reachDist = hit ? hit.dist : Infinity;
     hands.update(dt, { ...view, reachDist });
 
-    const target = hit && hit.body && hit.body.dynamic && hit.dist <= CONFIG.interaction.reach ? hit.body : null;
+    const target = !held && hit && hit.body && hit.body.dynamic && hit.dist <= CONFIG.interaction.reach ? hit.body : null;
     world.setHighlight(target);
     ui.setReach(!!target);
 

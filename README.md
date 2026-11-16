@@ -41,7 +41,8 @@ render.yaml, DEPLOY_RENDER.md, .env.example
 | Shift | run |
 | Space | jump |
 | LMB / RMB | poke with left / right hand (shoves crates) |
-| Hold E | both hands reach toward what you're looking at |
+| E | pick up the crate you're looking at / put it down (hands reach while you hold one) |
+| LMB / RMB while carrying | throw the crate |
 | V | third-person debug view (shows head, torso, feet, hands back on the body) |
 
 ## Structure
