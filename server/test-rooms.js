@@ -1,7 +1,7 @@
 // Unit tests for room logic: node server/test-rooms.js
 'use strict';
 const assert = require('assert');
-const { RoomManager } = require('./rooms');
+const { PUNCH, RoomManager } = require('./rooms');
 
 const m = new RoomManager({ maxPlayers: 12 });
 const a = m.create('A', 'Alice');
@@ -75,4 +75,28 @@ console.log('All room tests passed.');
   // other room has its own crates
   const o = m.create('O', 'O'); assert.strictEqual(m.crateInit(o.room).length, 0, 'crate state is per room');
   console.log('Crate ownership tests passed.');
+}
+
+// ---- punching ----
+{
+  const m = new RoomManager();
+  const a = m.create('A', 'A'); const code = a.room.code; m.join('B', code, 'B'); m.join('C', code, 'C');
+  const st = (x, z) => [x, 0, z, 0, 0, 0, 0, 1];
+  let t = 100000;
+  m.setState('A', st(0, 0), t); m.setState('B', st(1.5, 0), t); m.setState('C', st(50, 0), t);
+  assert.strictEqual(m.punch('A', 'A', t), null, 'cannot punch yourself');
+  assert.strictEqual(m.punch('A', 'C', t - 1000), null, 'out of range rejected');
+  let r = m.punch('A', 'B', t); assert.ok(r && r.hp === 66 && !r.ko, 'first hit');
+  assert.ok(Math.abs(r.d[0] - 1) < 1e-6, 'knockback points away from attacker');
+  assert.strictEqual(m.punch('A', 'B', t + 50), null, 'attacker cooldown');
+  r = m.punch('A', 'B', t + 300); assert.ok(r && r.hp === 32 && !r.ko, 'second hit');
+  r = m.punch('A', 'B', t + 600); assert.ok(r && r.ko && r.hp === 0, 'third hit knocks out');
+  assert.strictEqual(m.punch('A', 'B', t + 900), null, 'cannot hit a KO\'d player');
+  assert.strictEqual(m.punch('B', 'A', t + 900), null, 'KO\'d player cannot punch');
+  assert.strictEqual(m.punch('A', 'B', t + 600 + PUNCH.koMs + 100), null, 'invulnerable right after waking');
+  r = m.punch('A', 'B', t + 600 + PUNCH.koMs + PUNCH.invulnMs + 100); assert.ok(r && r.hp === 66, 'full health after KO');
+  r = m.punch('A', 'B', t + 600 + PUNCH.koMs + PUNCH.invulnMs + 100 + PUNCH.regenAfterMs + 500); assert.ok(r && r.hp === 66, 'health regenerates when left alone');
+  const o = m.create('X', 'X'); m.setState('X', st(0, 0), t);
+  assert.strictEqual(m.punch('X', 'B', t + 99999), null, 'cannot punch players in another room');
+  console.log('Punch tests passed.');
 }

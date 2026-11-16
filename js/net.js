@@ -40,6 +40,7 @@ export class Net {
     this.onRoom = () => {};           // (room|null, info)
     this.onRoster = () => {};         // (roster, hostId)
     this.onNotice = () => {};         // (text, kind)  kind: join|leave|info|error
+    this.onHit = () => {};            // ({ from, to, d, hp, ko, koMs, fromName, toName })
     this.crateSync = null;            // set by main (CrateSync)
   }
 
@@ -121,6 +122,7 @@ export class Net {
     socket.on('crates', (m) => this.crateSync?.onRemote(m));
     socket.on('crates-released', (l) => this.crateSync?.onReleased(l));
     socket.on('crate-impulse', (d) => this.crateSync?.onImpulse(d));
+    socket.on('hit', (h) => this.onHit(h));
     socket.on('action', (a) => { const p = this.remotes.players.get(a.id); if (p && a.type === 'poke') p.poke(a.side); });
 
     // latency probe
@@ -247,6 +249,10 @@ export class Net {
 
   sendCrates(entries) { if (this.room && this.socket && this.socket.connected) this.socket.emit('crates', entries); }
   sendCrateImpulse(idx, d, m) { if (this.room && this.socket && this.socket.connected) this.socket.emit('crate-impulse', { idx, d, m }); }
+
+  sendPunch(targetId) {
+    if (this.room && this.socket && this.socket.connected) this.socket.emit('punch', { to: targetId });
+  }
 
   sendAction(type, side) {
     if (this.room && this.socket && this.socket.connected) this.socket.emit('action', { type, side });

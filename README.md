@@ -20,6 +20,14 @@ Three.js r160 loads from the jsDelivr CDN, so you need an internet connection. R
   forwards pokes to the owner, and frees a player's crates if they leave. Everyone starts from the same layout when joining a room.
 - Dropped connections auto-reconnect and rejoin the same room if it still exists.
 
+## Punching + knockouts
+- Punch another player (LMB / RMB) to shove them back. **3 hits** knock them out: they fall over and can't move or act for 5 s, then get back up
+  with full health and a short moment of protection. Health refills if you are left alone for 4 s.
+- The server validates every punch (range, per-player cooldown, KO / protection state) and broadcasts the hit, so the result is the same for everyone.
+  Numbers live in `PUNCH` in `server/rooms.js` (damage, KO time, ...) and `combat` in `js/config.js` (reach, knockback). `npm test` covers the rules.
+- You can't hit through crates or walls. Knocked-out players drop whatever they carry.
+- Punching only works inside a room (you need another player).
+
 ## Extra files
 ```
 server/server.js    Express (static + /healthz + /config.js) + Socket.IO
@@ -28,6 +36,7 @@ js/net.js           Socket.IO client, reconnect/rejoin, clock sync
 js/crates-sync.js   crate ownership + sync
 js/remote.js        remote avatars + snapshot interpolation + hand/feet animation
 js/bodyyaw.js       camera-independent body rotation
+js/combat.js        punch detection, hit handling, knockout state + HUD effects
 js/multiplayer-ui.js menu panel, room HUD, join/leave toasts
 render.yaml, DEPLOY_RENDER.md, .env.example
 ```
@@ -40,7 +49,7 @@ render.yaml, DEPLOY_RENDER.md, .env.example
 | WASD | walk |
 | Shift | run |
 | Space | jump |
-| LMB / RMB | poke with left / right hand (shoves crates) |
+| LMB / RMB | punch with left / right hand (shoves crates; punches other players) |
 | E | pick up the crate you're looking at / put it down (hands reach while you hold one) |
 | LMB / RMB while carrying | throw the crate |
 | V | third-person debug view (shows head, torso, feet, hands back on the body) |

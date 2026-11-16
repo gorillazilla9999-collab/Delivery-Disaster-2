@@ -12,6 +12,7 @@ import { RemotePlayers } from './remote.js';
 import { Net } from './net.js';
 import { MultiplayerUI } from './multiplayer-ui.js';
 import { CrateSync } from './crates-sync.js';
+import { Combat } from './combat.js';
 
 async function main() {
   const ui = new UI();
@@ -101,6 +102,7 @@ async function main() {
 
   // --- hand interaction ---
   hands.onImpact = (side) => {
+    if (combat.tryPunch()) return;                        // punched another player
     const hit = physics.raycast(player.eyePos, player.aimDir, CONFIG.interaction.reach, player.body);
     if (hit && hit.body && hit.body.dynamic) {
       crateSync.poke(hit.body, player.aimDir, CONFIG.interaction.pokeImpulse);
@@ -112,6 +114,12 @@ async function main() {
   const remotes = new RemotePlayers(scene);
   const net = new Net(remotes);
   const mpUI = new MultiplayerUI();
+  const combat = new Combat({
+    scene, player, net, remotes, physics,
+    toast: (text, kind) => mpUI.toast(text, kind),
+    onHurt: () => dropCrate(),
+  });
+  net.onHit = (h) => combat.onHit(h);
   let needSpawn = false;
   const crateSync = new CrateSync(world.crates, physics, net);
   net.crateSync = crateSync;
@@ -121,6 +129,7 @@ async function main() {
   net.onRoom = (room, info = {}) => {
     mpUI.setRoom(room);
     if (!room || !info.rejoined) dropCrate();
+    combat.setActive(!!room);
     if (room) {
       if (!info.rejoined) crateSync.resetToHome();     // everybody starts from the same crate layout
       crateSync.setActive(true);
@@ -163,7 +172,7 @@ async function main() {
   ui.showReady();
 
   // debug handles for the console
-  window.DD = { get held() { return held; }, scene, camera, character, hands, player, physics, world, input, net, remotes, crateSync };
+  window.DD = { combat, get held() { return held; }, scene, camera, character, hands, player, physics, world, input, net, remotes, crateSync };
 
   // --- main loop ---
   let last = performance.now();
@@ -176,6 +185,9 @@ async function main() {
 
     // one-shot actions
     if (input.pressed('KeyV')) player.toggleThirdPerson();
+    const down = combat.knockedOut;                              // knocked out: no actions at all
+    if (down && held) dropCrate();
+    if (down) { for (const k of ['KeyE', 'Mouse0', 'Mouse2']) input._pressed.delete(k); }
     if (input.pressed('KeyE')) { if (held) dropCrate(); else pickUp(); }
     if (held && crateSync.isRemoteOwned(held)) dropCrate();      // somebody else won the claim
     if (held && (input.pressed('Mouse0') || input.pressed('Mouse2'))) {
@@ -185,7 +197,7 @@ async function main() {
       if (input.pressed('Mouse0') && hands.poke('left')) net.sendAction('poke', 'left');
       if (input.pressed('Mouse2') && hands.poke('right')) net.sendAction('poke', 'right');
     }
-    hands.setReaching(!!held || input.down('KeyE'));
+    hands.setReaching(!!held || (!down && input.down('KeyE')));
     hands.setGrip('left', held ? 1 : 0); hands.setGrip('right', held ? 1 : 0);
 
     // physics in small substeps for stable collisions
@@ -220,6 +232,7 @@ async function main() {
       });
     }
     net.updateRemotes(dt);
+    combat.update(dt);
 
     world.update(dt, player.body.pos, camera, (now - clock0) / 1000);
     renderer.render(scene, camera);

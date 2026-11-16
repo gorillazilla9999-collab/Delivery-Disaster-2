@@ -5,6 +5,15 @@ const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I, O, 0, 1
 const CODE_LENGTH = 5;
 const WORLD_LIMIT = 100;
 const MAX_CRATES = 64;
+const PUNCH = {
+  damage: 34,            // 3 clean hits = knocked out
+  maxHp: 100,
+  koMs: 5000,            // how long a knocked-out player stays down
+  regenAfterMs: 4000,    // no hits for this long -> back to full health
+  invulnMs: 1500,        // protection right after getting back up
+  cooldownMs: 220,       // per attacker
+  maxRange: 5,           // metres between the two players' last known positions (lag tolerant)
+};
 const OWNER_TIMEOUT = 800;      // ms without updates before another player may take a crate over
 
 function clampNum(v, lo, hi, fallback = 0) {
@@ -61,7 +70,8 @@ class RoomManager {
     let base = cleanName(name, 'Courier');
     let final = base, n = 2;
     while (taken.has(final.toLowerCase())) final = `${base.slice(0, 13)} ${n++}`;
-    const player = { id, name: final, joinedAt: Date.now(), state: null, dirty: false, lastStateAt: 0, lastCratesAt: 0 };
+    const player = { id, name: final, joinedAt: Date.now(), state: null, dirty: false, lastStateAt: 0, lastCratesAt: 0,
+      hp: PUNCH.maxHp, lastHitAt: 0, koUntil: 0, invulnUntil: 0, lastPunchAt: 0 };
     room.players.set(id, player);
     this.byPlayer.set(id, room.code);
     return { room, player };
@@ -155,6 +165,43 @@ class RoomManager {
     return out;
   }
 
+  // ---- punching: the server decides whether a punch counts (range, cooldowns, KO, invulnerability) ----
+  // Returns null if rejected, otherwise { room, attacker, target, hp, ko, d:[x,z] }.
+  punch(attackerId, targetId, now = Date.now()) {
+    const room = this.roomOf(attackerId);
+    if (!room || attackerId === targetId) return null;
+    const a = room.players.get(attackerId), t = room.players.get(targetId);
+    if (!a || !t) return null;
+    if (now < a.koUntil) return null;                               // knocked-out players can't punch
+    if (now - a.lastPunchAt < PUNCH.cooldownMs) return null;
+    a.lastPunchAt = now;
+    if (now < t.koUntil || now < t.invulnUntil) return null;       // already down / just got up
+    if (!a.state || !t.state) return null;
+    const dx = t.state[0] - a.state[0], dz = t.state[2] - a.state[2], dy = t.state[1] - a.state[1];
+    const dist = Math.hypot(dx, dz);
+    if (dist > PUNCH.maxRange || Math.abs(dy) > 3) return null;
+    if (now - t.lastHitAt > PUNCH.regenAfterMs || t.hpResetOnWake) t.hp = PUNCH.maxHp;
+    t.hpResetOnWake = false;
+    t.hp -= PUNCH.damage;
+    t.lastHitAt = now;
+    let ko = false;
+    if (t.hp <= 0) {
+      ko = true;
+      t.hp = 0;
+      t.koUntil = now + PUNCH.koMs;
+      t.invulnUntil = t.koUntil + PUNCH.invulnMs;
+      t.hpResetOnWake = true;
+    }
+    const l = dist || 1;
+    return { room, attacker: a, target: t, hp: t.hp, ko, d: [dx / l, dz / l] };
+  }
+
+  // Called by the server when a KO'd player's timer has passed (also lazily on the next hit).
+  wake(room, id, now = Date.now()) {
+    const p = room.players.get(id);
+    if (p && p.hpResetOnWake && now >= p.koUntil) { p.hp = PUNCH.maxHp; p.hpResetOnWake = false; }
+  }
+
   publicPlayers(room) {
     return [...room.players.values()].map((p) => ({ id: p.id, name: p.name, state: p.state }));
   }
@@ -170,4 +217,4 @@ class RoomManager {
   }
 }
 
-module.exports = { RoomManager, MAX_CRATES, CODE_ALPHABET, CODE_LENGTH, cleanName };
+module.exports = { PUNCH, RoomManager, MAX_CRATES, CODE_ALPHABET, CODE_LENGTH, cleanName };

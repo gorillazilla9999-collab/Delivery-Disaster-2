@@ -56,7 +56,12 @@ export class RemotePlayer {
     this.air = 0; this.reach = 0;
     this.actions = { left: null, right: null };
     this.hasState = false;
+    this.koUntil = 0; this.koAmt = 0;                  // knocked out: lies on the ground until koUntil (performance.now ms)
+    this.root.rotation.order = 'YXZ';
   }
+
+  get isKO() { return performance.now() < this.koUntil; }
+  knockOut(ms) { this.koUntil = performance.now() + ms; }
 
   pushSnapshot(t, s) {
     const n = { t, x: s[0], y: s[1], z: s[2], yaw: s[3], pitch: s[4], speed: s[5], vy: s[6], flags: s[7] };
@@ -124,8 +129,15 @@ export class RemotePlayer {
     root.position.copy(this.pos);
     root.rotation.y = this.bodyYaw.update(this.yaw, this.speed, dt);   // body turns independently of the camera
 
+    // knocked out: fall over backwards and lie there (name tag floats above the body)
+    this.koAmt += ((this.isKO ? 1 : 0) - this.koAmt) * (1 - Math.exp(-7 * dt));
+    if (this.koAmt < 0.002) this.koAmt = 0;
+    root.rotation.x = this.koAmt * (Math.PI / 2);
+    root.position.y += 0.12 * this.koAmt;
+    this.tag.position.set(0, P.height + 0.45 + (1.0 - P.height - 0.45) * this.koAmt, -1.3 * this.koAmt);
+
     // same animation maths as the local player
-    const moveTarget = this.grounded ? Math.min(1, this.speed / P.runSpeed) : 0;
+    const moveTarget = this.grounded && !this.isKO ? Math.min(1, this.speed / P.runSpeed) : 0;
     this.moveAmt += (moveTarget - this.moveAmt) * (1 - Math.exp(-10 * dt));
     this.runAmt = clamp((this.speed - P.walkSpeed) / (P.runSpeed - P.walkSpeed), 0, 1);
     if (this.grounded) this.phase += this.speed * dt * CONFIG.camera.bobFrequency;

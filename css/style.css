@@ -83,3 +83,22 @@ body.menu-open #roomhud { opacity: 0; }
 .toast.out { opacity: 0; transition: opacity .4s; }
 @keyframes toast-in { from { transform: translateX(-12px); opacity: 0; } }
 @media (max-width: 480px) { #mp-players { grid-template-columns: 1fr; } }
+
+/* ---- combat ---- */
+#crosshair.hitmark { background: #ff5a4a !important; border-color: #fff !important; transform: scale(1.5); }
+#hitflash { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 6;
+  background: radial-gradient(ellipse at center, rgba(255,40,20,0) 35%, rgba(220,20,10,.85) 100%); }
+#hp { position: fixed; left: 14px; bottom: 14px; display: flex; align-items: center; gap: 8px; z-index: 5; pointer-events: none;
+  font-weight: 800; font-size: 13px; color: #fff; text-shadow: 0 1px 2px #000; }
+#hp[hidden] { display: none; }
+#hp-bar { width: 160px; height: 14px; background: rgba(0,0,0,.5); border: 3px solid #1b1b1b; border-radius: 8px; overflow: hidden; }
+#hp-fill { height: 100%; width: 100%; background: #3bb54a; transition: width .15s, background .15s; }
+#hp-fill[data-low="1"] { background: #e8432e; }
+body.menu-open #hp { opacity: 0; }
+#koscreen { position: fixed; inset: 0; z-index: 7; pointer-events: none; display: grid; place-content: center; text-align: center; gap: 6px;
+  background: rgba(0,0,0,.55); color: #fff; }
+#koscreen[hidden] { display: none; }
+#koscreen b { font-size: clamp(36px, 7vw, 84px); letter-spacing: 4px; color: #ffd23f; text-shadow: 4px 4px 0 #1b1b1b; animation: ko-wobble 1.2s ease-in-out infinite; }
+#koscreen span { font-size: 20px; text-shadow: 0 2px 4px #000; }
+#koscreen em { font-style: normal; font-weight: 800; color: #ffd23f; }
+@keyframes ko-wobble { 50% { transform: rotate(-2.5deg) scale(1.03); } 0%, 100% { transform: rotate(2deg); } }

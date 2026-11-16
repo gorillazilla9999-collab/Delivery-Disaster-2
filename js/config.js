@@ -37,5 +37,7 @@ export const CONFIG = {
 
   interaction: { reach: 2.4, rayLength: 3.0, pokeImpulse: 4.5 },
 
+  combat: { reach: 2.1, hitboxHalf: 0.5, knockback: 7.5, knockLift: 3.2 },
+
   carry: { maxMass: 3.5, holdGap: 0.95, holdDrop: 0.35, gain: 14, maxSpeed: 14, breakDist: 2.2, throwSpeed: 9 },
 };

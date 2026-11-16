@@ -5,7 +5,7 @@ const http = require('http');
 const express = require('express');
 const compression = require('compression');
 const { Server } = require('socket.io');
-const { RoomManager } = require('./rooms');
+const { RoomManager, PUNCH } = require('./rooms');
 
 const ROOT = path.join(__dirname, '..');
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -105,6 +105,17 @@ io.on('connection', (socket) => {
     if (!room || !a || (a.type !== 'poke')) return;
     const side = a.side === 'left' ? 'left' : 'right';
     socket.to(room.code).emit('action', { id: socket.id, type: 'poke', side });
+  });
+
+  // punches: the server validates the hit, then tells the whole room (victim reacts, everyone sees the effect)
+  socket.on('punch', (d) => {
+    if (!d || typeof d.to !== 'string') return;
+    const res = rooms.punch(socket.id, d.to);
+    if (!res) return;
+    io.to(res.room.code).emit('hit', {
+      from: socket.id, to: res.target.id, d: res.d, hp: res.hp, ko: res.ko, koMs: PUNCH.koMs,
+      fromName: res.attacker.name, toName: res.target.name,
+    });
   });
 
   // crates: only the current owner's updates are accepted; accepted ones are relayed to everybody else in the room

@@ -32,6 +32,8 @@ export class Player {
     this.dip = 0; this.dipVel = 0; this.roll = 0;
     this.fov = CONFIG.camera.fov;
     this.thirdPerson = false;
+    this.ko = false; this.koAmt = 0;       // knocked out: no control, camera lies on the ground
+    this.knockT = 0;                       // brief loss of control after being punched
     this.bodyYaw = new BodyYaw(0);          // camera-independent body facing
 
     this.eyePos = new THREE.Vector3();     // first-person eye position (used for aiming)
@@ -48,6 +50,20 @@ export class Player {
   // ---- every physics substep ----
   fixedUpdate(h) {
     const b = this.body, inp = this.input;
+
+    // punched / knocked out: no steering, just slide and tumble with friction
+    if (this.ko || this.knockT > 0) {
+      this.knockT = Math.max(0, this.knockT - h);
+      this.jumpBuffer = 0;
+      if (b.onGround) {
+        const sp = Math.hypot(b.vel.x, b.vel.z), ns = Math.max(0, sp - (this.ko ? 16 : 10) * h);
+        const k = sp > 0 ? ns / sp : 0;
+        b.vel.x *= k; b.vel.z *= k;
+      }
+      this.prevVy = b.vel.y;
+      return;
+    }
+
     const f = (inp.down('KeyW') || inp.down('ArrowUp') ? 1 : 0) - (inp.down('KeyS') || inp.down('ArrowDown') ? 1 : 0);
     const r = (inp.down('KeyD') || inp.down('ArrowRight') ? 1 : 0) - (inp.down('KeyA') || inp.down('ArrowLeft') ? 1 : 0);
 
@@ -98,6 +114,7 @@ export class Player {
 
     // look
     const look = inp.consumeLook();
+    if (this.ko) { look.x = 0; look.y = 0; }               // can't look around while out cold
     const sens = CONFIG.look.baseSensitivity * this.getSensitivity();
     this.targetYaw -= look.x * sens;
     this.targetPitch = clamp(this.targetPitch - look.y * sens, -CONFIG.look.maxPitch, CONFIG.look.maxPitch);
@@ -128,7 +145,9 @@ export class Player {
     const sp = Math.sin(this.pitch), cp = Math.cos(this.pitch);
     this.aimDir.set(-sy * cp, sp, -cy * cp);
 
-    const eyeY = b.pos.y + this.character.eyeHeight + b.stepOffset + this.dip + bobY;
+    this.koAmt += ((this.ko ? 1 : 0) - this.koAmt) * (1 - Math.exp(-6 * dt));
+    const standEye = b.pos.y + this.character.eyeHeight + b.stepOffset + this.dip + bobY;
+    const eyeY = standEye + (b.pos.y + 0.3 - standEye) * this.koAmt;
     this.eyePos.set(b.pos.x + cy * bobX, eyeY, b.pos.z - sy * bobX);
 
     // strafe tilt
@@ -136,7 +155,7 @@ export class Player {
     this.roll += (-strafe * cam.tilt - this.roll) * (1 - Math.exp(-8 * dt));
 
     const camera = this.camera;
-    camera.rotation.set(this.pitch, this.yaw, this.roll, 'YXZ');
+    camera.rotation.set(this.pitch, this.yaw, this.roll + this.koAmt * 1.35, 'YXZ');
     if (this.thirdPerson) {
       camera.position.copy(this.eyePos).addScaledVector(this.aimDir, -3);
       camera.position.y = Math.max(0.2, camera.position.y);
@@ -168,6 +187,16 @@ export class Player {
     this.bodyYaw.snap(yaw);
     b.updateBounds();
   }
+
+  // Punched: shoved away from the attacker, briefly out of control.
+  knock(dx, dz, speed, lift) {
+    const b = this.body;
+    b.vel.x = dx * speed; b.vel.z = dz * speed;
+    b.vel.y = Math.max(b.vel.y, lift);
+    b.onGround = false;
+    this.knockT = 0.4;
+  }
+  setKnockedOut(on) { this.ko = on; if (on) this.knockT = 0; }
 
   toggleThirdPerson() {
     this.thirdPerson = !this.thirdPerson;
