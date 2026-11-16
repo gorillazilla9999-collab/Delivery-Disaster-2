@@ -1,0 +1,39 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #9fd0ff;
+  font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif; }
+canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+#crosshair { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+  border-radius: 50%; background: rgba(255,255,255,.9); box-shadow: 0 0 0 1px rgba(0,0,0,.55);
+  pointer-events: none; transition: all .12s ease; }
+#crosshair.reach { width: 22px; height: 22px; margin: -11px 0 0 -11px; background: transparent;
+  border: 2px solid #ffd23f; box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+body.menu-open #crosshair { opacity: 0; }
+
+#hint { position: fixed; left: 12px; bottom: 10px; padding: 6px 10px; font-size: 12px; color: #fff;
+  background: rgba(0,0,0,.45); border-radius: 6px; pointer-events: none; }
+#hint b { color: #ffd23f; }
+body.menu-open #hint { opacity: 0; }
+
+#overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(15,18,30,.62); backdrop-filter: blur(3px); cursor: pointer; z-index: 10; }
+#overlay.hidden { display: none; }
+#panel { width: min(440px, 92vw); padding: 28px 30px 22px; text-align: center; cursor: default;
+  background: #fff6dc; border: 4px solid #1b1b1b; border-radius: 16px; box-shadow: 8px 8px 0 #1b1b1b; }
+#panel h1 { margin: 0 0 10px; font-size: 40px; line-height: .95; letter-spacing: 1px; color: #1b1b1b; }
+#panel h1 span { color: #e8432e; }
+#status { margin: 6px 0 12px; color: #444; }
+#loadbar { height: 10px; border: 2px solid #1b1b1b; border-radius: 6px; overflow: hidden; background: #fff; }
+#loadfill { height: 100%; width: 0; background: #ffb400; transition: width .15s; }
+#play { margin-top: 14px; padding: 12px 26px; font: inherit; font-size: 20px; font-weight: 700; cursor: pointer;
+  color: #1b1b1b; background: #ffd23f; border: 3px solid #1b1b1b; border-radius: 10px; box-shadow: 4px 4px 0 #1b1b1b; }
+#play:hover { transform: translate(-1px,-1px); box-shadow: 5px 5px 0 #1b1b1b; }
+#play:active { transform: translate(3px,3px); box-shadow: 1px 1px 0 #1b1b1b; }
+#error { margin-top: 14px; padding: 10px; text-align: left; font-size: 14px; color: #7a1208;
+  background: #ffe1db; border: 2px solid #e8432e; border-radius: 8px; }
+#settings { margin: 16px 0 6px; font-size: 14px; color: #333; }
+#settings input { width: 100%; margin-top: 6px; }
+#controls { list-style: none; padding: 0; margin: 12px 0 0; display: grid; grid-template-columns: 1fr 1fr;
+  gap: 4px 14px; text-align: left; font-size: 13px; color: #333; }
+#controls b { color: #e8432e; }
+[hidden] { display: none !important; }

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Delivery Disaster</title>
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Three.js is loaded from a CDN (pinned version). -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="crosshair"></div>
+
+  <div id="hint">
+    <b>WASD</b> move &middot; <b>Shift</b> run &middot; <b>Space</b> jump &middot;
+    <b>LMB / RMB</b> left / right hand &middot; hold <b>E</b> reach &middot;
+    <b>V</b> third-person debug &middot; <b>Esc</b> menu
+  </div>
+
+  <div id="overlay">
+    <div id="panel">
+      <h1>DELIVERY<br><span>DISASTER</span></h1>
+      <p id="status">Loading character&hellip;</p>
+      <div id="loadbar"><div id="loadfill"></div></div>
+      <button id="play" hidden>Click to play</button>
+      <p id="error" hidden></p>
+      <div id="settings">
+        <label for="sens">Mouse sensitivity <output id="sensval">1.0</output></label>
+        <input id="sens" type="range" min="0.2" max="3" step="0.05" value="1">
+      </div>
+      <ul id="controls">
+        <li><b>WASD</b> walk</li>
+        <li><b>Shift</b> run</li>
+        <li><b>Space</b> jump</li>
+        <li><b>Mouse</b> look</li>
+        <li><b>LMB / RMB</b> left / right hand poke</li>
+        <li><b>Hold E</b> reach with both hands</li>
+        <li><b>V</b> toggle third-person (debug)</li>
+        <li><b>Esc</b> release mouse</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
