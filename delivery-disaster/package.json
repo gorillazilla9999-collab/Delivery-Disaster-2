@@ -1,0 +1,24 @@
+{
+  "name": "delivery-disaster",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Delivery Disaster - chaotic physics-based multiplayer browser game",
+  "type": "module",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "test": "node --test test/rooms.test.js test/game-server.test.js test/interp.test.js",
+    "test:integration": "node test/integration.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.7.5"
+  }
+}
