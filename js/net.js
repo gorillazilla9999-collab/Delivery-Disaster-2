@@ -40,6 +40,7 @@ export class Net {
     this.onRoom = () => {};           // (room|null, info)
     this.onRoster = () => {};         // (roster, hostId)
     this.onNotice = () => {};         // (text, kind)  kind: join|leave|info|error
+    this.crateSync = null;            // set by main (CrateSync)
   }
 
   get inRoom() { return !!this.room; }
@@ -116,6 +117,10 @@ export class Net {
       this.onNotice(`${p.name || 'A player'} ${p.reason === 'disconnected' ? 'disconnected' : 'left'}`, 'leave');
     });
     socket.on('snapshot', (snap) => this._onSnapshot(snap));
+    socket.on('crate-init', (list) => this.crateSync?.applyInit(list));
+    socket.on('crates', (m) => this.crateSync?.onRemote(m));
+    socket.on('crates-released', (l) => this.crateSync?.onReleased(l));
+    socket.on('crate-impulse', (d) => this.crateSync?.onImpulse(d));
     socket.on('action', (a) => { const p = this.remotes.players.get(a.id); if (p && a.type === 'poke') p.poke(a.side); });
 
     // latency probe
@@ -239,6 +244,9 @@ export class Net {
     this._lastSendAt = now;
     this.socket.volatile.emit('state', pkt);
   }
+
+  sendCrates(entries) { if (this.room && this.socket && this.socket.connected) this.socket.emit('crates', entries); }
+  sendCrateImpulse(idx, d, m) { if (this.room && this.socket && this.socket.connected) this.socket.emit('crate-impulse', { idx, d, m }); }
 
   sendAction(type, side) {
     if (this.room && this.socket && this.socket.connected) this.socket.emit('action', { type, side });

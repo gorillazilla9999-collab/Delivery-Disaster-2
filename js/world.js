@@ -158,6 +158,7 @@ export function buildWorld({ scene, physics, renderer }) {
     scene.add(mesh);
     body.mesh = mesh;
     body.flash = 0;
+    body.home = [x, y, z];
     crates.push(body);
     return body;
   }

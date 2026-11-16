@@ -18,6 +18,7 @@ export class Body {
     this.mass = mass;
     this.dynamic = dynamic;
     this.isPlayer = false;
+    this.kinematic = false;   // true = moved by the network (owned by another player), acts like a moving wall
     this.friction = 5;        // ground deceleration for non-player dynamic bodies (m/s^2)
     this.stepHeight = 0;      // > 0 lets the body walk up small ledges
     this.stepOffset = 0;      // visual offset used to smooth step-ups (read by the camera)
@@ -70,6 +71,7 @@ export class PhysicsWorld {
   step(dt) {
     const g = CONFIG.physics.gravity;
     for (const b of this.dynamics) {
+      if (b.kinematic) continue;
       b.vel.y = Math.max(b.vel.y - g * dt, -CONFIG.physics.terminalVelocity);
       if (!b.isPlayer && b.onGround) {
         const sp = Math.hypot(b.vel.x, b.vel.z);
@@ -126,7 +128,7 @@ export class PhysicsWorld {
       b.updateBounds();
 
       const vb = b.vel[ax];
-      if (c.dynamic && b.dynamic) {
+      if (c.dynamic && !c.kinematic && b.dynamic) {
         // Perfectly inelastic exchange: heavier things are harder to shove.
         const vc = c.vel[ax];
         if (dir * (vb - vc) > 0) {

@@ -66,6 +66,7 @@ io.on('connection', (socket) => {
     const { room, player } = res;
     socket.join(room.code);
     ack?.({ ok: true, code: room.code, you: socket.id, name: player.name, max: rooms.maxPlayers });
+    socket.emit('crate-init', rooms.crateInit(room));                 // current state of every moved crate
     socket.to(room.code).emit('player-joined', { id: player.id, name: player.name });
     emitRoster(room);
   };
@@ -87,6 +88,7 @@ io.on('connection', (socket) => {
     if (!res) return;
     socket.leave(res.room.code);
     if (!res.closed) {
+      if (res.releasedCrates.length) io.to(res.room.code).emit('crates-released', res.releasedCrates);
       io.to(res.room.code).emit('player-left', { id: socket.id, name: res.player && res.player.name, reason });
       emitRoster(res.room);
     }
@@ -103,6 +105,25 @@ io.on('connection', (socket) => {
     if (!room || !a || (a.type !== 'poke')) return;
     const side = a.side === 'left' ? 'left' : 'right';
     socket.to(room.code).emit('action', { id: socket.id, type: 'poke', side });
+  });
+
+  // crates: only the current owner's updates are accepted; accepted ones are relayed to everybody else in the room
+  socket.on('crates', (entries) => {
+    const room = rooms.roomOf(socket.id);
+    if (!room) return;
+    const accepted = rooms.crateUpdate(socket.id, entries);
+    if (accepted.length) socket.to(room.code).emit('crates', { t: Date.now(), from: socket.id, c: accepted });
+  });
+
+  // poking a crate somebody else is simulating: forward the impulse to its owner
+  socket.on('crate-impulse', (d) => {
+    const room = rooms.roomOf(socket.id);
+    if (!room || !d || !Array.isArray(d.d)) return;
+    const idx = Number(d.idx) | 0;
+    const owner = rooms.crateOwner(room, idx);
+    if (!owner || owner === socket.id) return;
+    const v = d.d.slice(0, 3).map((n) => (Number.isFinite(+n) ? Math.max(-1, Math.min(1, +n)) : 0));
+    io.to(owner).emit('crate-impulse', { idx, d: v, m: Math.max(0, Math.min(10, Number(d.m) || 0)) });
   });
 
   socket.on('ping-check', (ack) => { if (typeof ack === 'function') ack(Date.now()); });

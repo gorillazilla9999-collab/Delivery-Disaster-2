@@ -11,6 +11,7 @@ import { UI } from './ui.js';
 import { RemotePlayers } from './remote.js';
 import { Net } from './net.js';
 import { MultiplayerUI } from './multiplayer-ui.js';
+import { CrateSync } from './crates-sync.js';
 
 async function main() {
   const ui = new UI();
@@ -61,7 +62,7 @@ async function main() {
   hands.onImpact = (side) => {
     const hit = physics.raycast(player.eyePos, player.aimDir, CONFIG.interaction.reach, player.body);
     if (hit && hit.body && hit.body.dynamic) {
-      physics.applyImpulse(hit.body, player.aimDir, CONFIG.interaction.pokeImpulse);
+      crateSync.poke(hit.body, player.aimDir, CONFIG.interaction.pokeImpulse);
       world.flash(hit.body);
     }
   };
@@ -71,16 +72,21 @@ async function main() {
   const net = new Net(remotes);
   const mpUI = new MultiplayerUI();
   let needSpawn = false;
+  const crateSync = new CrateSync(world.crates, physics, net);
+  net.crateSync = crateSync;
 
   net.onStatus = (state, text) => mpUI.setStatus(state, text);
   net.onNotice = (text, kind) => mpUI.toast(text, kind);
   net.onRoom = (room, info = {}) => {
     mpUI.setRoom(room);
     if (room) {
+      if (!info.rejoined) crateSync.resetToHome();     // everybody starts from the same crate layout
+      crateSync.setActive(true);
       needSpawn = !info.rejoined;
       if (info.created) mpUI.toast(`Room ${room.code} created - share the code!`, 'join');
       else if (!info.rejoined) mpUI.toast(`Joined room ${room.code}`, 'join');
     } else {
+      crateSync.setActive(false);
       if (info.left) mpUI.toast('You left the room', 'info');
       if (info.lostConnection) mpUI.showMessage('Connection lost - trying to rejoin your room…', 'error');
       if (info.rejoinFailed) mpUI.showMessage('Could not rejoin your room (it may have closed or filled up).', 'error');
@@ -115,7 +121,7 @@ async function main() {
   ui.showReady();
 
   // debug handles for the console
-  window.DD = { scene, camera, character, hands, player, physics, world, input, net, remotes };
+  window.DD = { scene, camera, character, hands, player, physics, world, input, net, remotes, crateSync };
 
   // --- main loop ---
   let last = performance.now();
@@ -133,6 +139,7 @@ async function main() {
     hands.setReaching(input.down('KeyE'));
 
     // physics in small substeps for stable collisions
+    crateSync.beforePhysics();
     player.beginFrame(dt);
     const n = Math.max(1, Math.ceil(dt / CONFIG.physics.maxSubstep));
     const h = dt / n;
@@ -141,6 +148,7 @@ async function main() {
       physics.step(h);
       player.afterStep();
     }
+    crateSync.afterPhysics(dt);
 
     // view
     const view = player.updateView(dt);

@@ -15,6 +15,9 @@ Three.js r160 loads from the jsDelivr CDN, so you need an internet connection. R
 - Everyone's position, look direction, walk/run/jump state, hand pokes (LMB/RMB) and reaching (E) are synced at 20 Hz
   and interpolated ~120 ms behind; other players are full copies of `person.glb` (head, torso, floating hands and feet).
 - The body turns independently of the camera (it follows you when you move, and is dragged along beyond a neck limit).
+- **Crates are synced too.** Whoever sets a crate moving owns it: they simulate it and stream its state, everyone else
+  follows it smoothly. The server arbitrates when two players grab the same crate, gives late joiners the current layout,
+  forwards pokes to the owner, and frees a player's crates if they leave. Everyone starts from the same layout when joining a room.
 - Dropped connections auto-reconnect and rejoin the same room if it still exists.
 
 ## Extra files
@@ -22,6 +25,7 @@ Three.js r160 loads from the jsDelivr CDN, so you need an internet connection. R
 server/server.js    Express (static + /healthz + /config.js) + Socket.IO
 server/rooms.js     room manager (codes, 12-player cap, validation)  -- npm test
 js/net.js           Socket.IO client, reconnect/rejoin, clock sync
+js/crates-sync.js   crate ownership + sync
 js/remote.js        remote avatars + snapshot interpolation + hand/feet animation
 js/bodyyaw.js       camera-independent body rotation
 js/multiplayer-ui.js menu panel, room HUD, join/leave toasts

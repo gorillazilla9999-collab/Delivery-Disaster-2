@@ -52,3 +52,27 @@ assert.strictEqual(m.leave('nobody'), null);
 const m2 = new RoomManager(); const seen = new Set();
 for (let i = 0; i < 2000; i++) { const r = m2.create('s' + i, 'n'); assert.ok(!seen.has(r.room.code)); seen.add(r.room.code); }
 console.log('All room tests passed.');
+
+// ---- crate ownership ----
+{
+  const m = new RoomManager();
+  const a = m.create('A', 'A'); const code = a.room.code; m.join('B', code, 'B');
+  let t = 10000;
+  let acc = m.crateUpdate('A', [[3, 1, 0, 2, 4, 0, 0, 0]], t);
+  assert.strictEqual(acc.length, 1, 'A claims free crate 3');
+  assert.strictEqual(m.crateUpdate('B', [[3, 9, 0, 9, 0, 0, 0, 0]], t + 50).length, 0, 'B cannot take owned crate');
+  assert.strictEqual(m.crateUpdate('A', [[3, 2, 0, 2, 0, 0, 0, 1]], t + 100).length, 1, 'A releases');
+  assert.strictEqual(m.crateOwner(a.room, 3), null);
+  assert.strictEqual(m.crateUpdate('B', [[3, 5, 0, 5, 1, 0, 0, 0]], t + 200).length, 1, 'B can take released crate');
+  assert.strictEqual(m.crateUpdate('A', [[3, 0, 0, 0, 0, 0, 0, 0]], t + 300).length, 0, 'A blocked while B active');
+  assert.strictEqual(m.crateUpdate('A', [[3, 0, 0, 0, 0, 0, 0, 0]], t + 2000).length, 1, 'stale owner can be taken over');
+  assert.strictEqual(m.crateUpdate('A', [[99, 0, 0, 0, 0, 0, 0, 0]], t + 3000).length, 0, 'bad index rejected');
+  assert.strictEqual(m.crateUpdate('A', [[2, 1, 0, 1, 0, 0, 0, 0]], t + 3005).length, 0, 'rate limited');
+  m.crateUpdate('A', [[2, 1, 0, 1, 0, 0, 0, 0]], t + 3100);
+  const init = m.crateInit(a.room); assert.ok(init.length >= 2 && init.find((e) => e[0] === 2)[7] === 'A', 'late-joiner init carries owners');
+  const l = m.leave('A'); assert.ok(l.releasedCrates.includes(2) && l.releasedCrates.includes(3), 'leaving releases owned crates');
+  assert.strictEqual(m.crateOwner(a.room, 2), null);
+  // other room has its own crates
+  const o = m.create('O', 'O'); assert.strictEqual(m.crateInit(o.room).length, 0, 'crate state is per room');
+  console.log('Crate ownership tests passed.');
+}

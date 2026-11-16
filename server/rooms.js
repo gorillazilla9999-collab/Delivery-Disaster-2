@@ -4,6 +4,8 @@
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I, O, 0, 1
 const CODE_LENGTH = 5;
 const WORLD_LIMIT = 100;
+const MAX_CRATES = 64;
+const OWNER_TIMEOUT = 800;      // ms without updates before another player may take a crate over
 
 function clampNum(v, lo, hi, fallback = 0) {
   v = Number(v);
@@ -39,7 +41,7 @@ class RoomManager {
   create(id, name) {
     if (this.byPlayer.has(id)) return { error: 'ALREADY_IN_ROOM', message: 'Leave your current room first.' };
     const code = this.generateCode();
-    const room = { code, players: new Map(), createdAt: Date.now(), hostId: id };
+    const room = { code, players: new Map(), createdAt: Date.now(), hostId: id, crates: new Map() };
     this.rooms.set(code, room);
     return this._add(room, id, name);
   }
@@ -59,7 +61,7 @@ class RoomManager {
     let base = cleanName(name, 'Courier');
     let final = base, n = 2;
     while (taken.has(final.toLowerCase())) final = `${base.slice(0, 13)} ${n++}`;
-    const player = { id, name: final, joinedAt: Date.now(), state: null, dirty: false, lastStateAt: 0 };
+    const player = { id, name: final, joinedAt: Date.now(), state: null, dirty: false, lastStateAt: 0, lastCratesAt: 0 };
     room.players.set(id, player);
     this.byPlayer.set(id, room.code);
     return { room, player };
@@ -73,11 +75,12 @@ class RoomManager {
     const room = this.rooms.get(code);
     if (!room) return null;
     const player = room.players.get(id);
+    const releasedCrates = this.releaseCrates(id, room);
     room.players.delete(id);
     let closed = false;
     if (room.players.size === 0) { this.rooms.delete(code); closed = true; }
     else if (room.hostId === id) room.hostId = room.players.keys().next().value;
-    return { room, player, closed };
+    return { room, player, closed, releasedCrates };
   }
 
   roomOf(id) {
@@ -107,6 +110,51 @@ class RoomManager {
     return true;
   }
 
+  // ---- shared objects (crates): per-crate ownership. The owner simulates and streams; others follow. ----
+  // entry: [idx, x, y, z, vx, vy, vz, release(0|1)].  Returns the accepted entries (to relay to the room).
+  crateUpdate(id, entries, now = Date.now()) {
+    const room = this.roomOf(id);
+    const p = room && room.players.get(id);
+    if (!p || !Array.isArray(entries)) return [];
+    if (now - p.lastCratesAt < 15) return [];
+    p.lastCratesAt = now;
+    const accepted = [];
+    for (const e of entries.slice(0, MAX_CRATES)) {
+      if (!Array.isArray(e) || e.length < 8) continue;
+      const idx = Number(e[0]) | 0;
+      if (idx < 0 || idx >= MAX_CRATES) continue;
+      const c = room.crates.get(idx) || { s: null, owner: null, at: 0 };
+      const ownedByOther = c.owner && c.owner !== id && room.players.has(c.owner) && now - c.at <= OWNER_TIMEOUT;
+      if (ownedByOther) continue;
+      c.s = [
+        clampNum(e[1], -WORLD_LIMIT, WORLD_LIMIT), clampNum(e[2], -5, 100), clampNum(e[3], -WORLD_LIMIT, WORLD_LIMIT),
+        clampNum(e[4], -60, 60), clampNum(e[5], -60, 60), clampNum(e[6], -60, 60),
+      ];
+      c.at = now;
+      const rel = e[7] === 1;
+      c.owner = rel ? null : id;
+      room.crates.set(idx, c);
+      accepted.push([idx, ...c.s, rel ? 1 : 0]);
+    }
+    return accepted;
+  }
+
+  releaseCrates(id, room = this.roomOf(id)) {
+    const out = [];
+    if (!room) return out;
+    for (const [idx, c] of room.crates) if (c.owner === id) { c.owner = null; out.push(idx); }
+    return out;
+  }
+
+  crateOwner(room, idx) { const c = room.crates.get(idx); return c ? c.owner : null; }
+
+  // everything a late joiner needs: [idx, x,y,z, vx,vy,vz, ownerId|null]
+  crateInit(room) {
+    const out = [];
+    for (const [idx, c] of room.crates) if (c.s) out.push([idx, ...c.s, c.owner]);
+    return out;
+  }
+
   publicPlayers(room) {
     return [...room.players.values()].map((p) => ({ id: p.id, name: p.name, state: p.state }));
   }
@@ -122,4 +170,4 @@ class RoomManager {
   }
 }
 
-module.exports = { RoomManager, CODE_ALPHABET, CODE_LENGTH, cleanName };
+module.exports = { RoomManager, MAX_CRATES, CODE_ALPHABET, CODE_LENGTH, cleanName };
