@@ -1,7 +1,19 @@
 // Delivery Disaster - Express + Socket.IO server (serves the game AND multiplayer).
 'use strict';
-// Load a local .env file if there is one (Node 20.12+); real environment variables (e.g. on Render) always win.
-try { process.loadEnvFile(require('path').join(__dirname, '..', '.env')); } catch (_) { /* no .env file: fine */ }
+// Load a local .env file if there is one (works on any Node version); real environment variables (e.g. on Render) win.
+let ENV_FILE_LOADED = false;
+try {
+  const text = require('fs').readFileSync(require('path').join(__dirname, '..', '.env'), 'utf8').replace(/^\uFEFF/, '');
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!m || line.trim().startsWith('#')) continue;
+    let v = m[2];
+    if (/^(["']).*\1$/.test(v)) v = v.slice(1, -1);
+    else v = v.replace(/\s+#.*$/, '');
+    if (process.env[m[1]] === undefined) process.env[m[1]] = v;
+  }
+  ENV_FILE_LOADED = true;
+} catch (_) { /* no .env file: fine */ }
 const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
@@ -239,7 +251,8 @@ setInterval(() => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Delivery Disaster server listening on http://${HOST}:${PORT} (max ${MAX_PLAYERS} players/room)`);
-  if (ADMIN_FROM_ENV) console.log('Admin code: set via ADMIN_CODE.');
+  console.log(`.env file: ${ENV_FILE_LOADED ? 'loaded' : 'not found (using real environment variables only)'}`);
+  if (ADMIN_FROM_ENV) console.log(`Admin code: set via ADMIN_CODE (${ADMIN_CODE.length} characters).`);
   else console.log(`Admin code (no ADMIN_CODE set, generated for this run): ${ADMIN_CODE}`);
 });
 
