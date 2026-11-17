@@ -16,6 +16,7 @@ const PUNCH = {
   maxRange: 5,           // metres between the two players' last known positions (lag tolerant)
 };
 const REJOIN_GRACE = 60000;      // ms a dropped player may come back into a LOCKED room with their rejoin token
+const CHAT_MAX = 200;           // characters per chat message
 const OWNER_TIMEOUT = 800;      // ms without updates before another player may take a crate over
 
 function clampNum(v, lo, hi, fallback = 0) {
@@ -143,6 +144,23 @@ class RoomManager {
     }));
   }
 
+  // ---- chat: clean + rate limit (max 5 messages per 5 s, 300 ms apart) ----
+  // Returns { room, player, text } or { error, message }.
+  chat(id, raw, now = Date.now()) {
+    const room = this.roomOf(id);
+    if (!room) return { error: 'NO_ROOM', message: 'Join a room to chat.' };
+    const p = room.players.get(id);
+    if (!p) return { error: 'NO_ROOM', message: 'Join a room to chat.' };
+    const text = String(raw ?? '').replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX);
+    if (!text) return { error: 'EMPTY', message: '' };
+    p.chatTimes = (p.chatTimes || []).filter((t) => now - t < 5000);
+    if (p.chatTimes.length >= 5 || (p.chatTimes.length && now - p.chatTimes[p.chatTimes.length - 1] < 300)) {
+      return { error: 'RATE', message: 'Slow down - you are chatting too fast.' };
+    }
+    p.chatTimes.push(now);
+    return { room, player: p, text };
+  }
+
   roomOf(id) {
     const code = this.byPlayer.get(id);
     return code ? this.rooms.get(code) : null;
@@ -267,4 +285,4 @@ class RoomManager {
   }
 }
 
-module.exports = { REJOIN_GRACE, PUNCH, RoomManager, MAX_CRATES, CODE_ALPHABET, CODE_LENGTH, cleanName };
+module.exports = { CHAT_MAX, REJOIN_GRACE, PUNCH, RoomManager, MAX_CRATES, CODE_ALPHABET, CODE_LENGTH, cleanName };

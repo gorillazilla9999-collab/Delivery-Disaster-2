@@ -148,3 +148,24 @@ console.log('All room tests passed.');
   assert.ok(m2.leave('C').room === r1, 'leave works after code change');
 }
 console.log('Lock/admin/code tests passed.');
+
+// ---- chat ----
+{
+  const m = new RoomManager();
+  const a = m.create('A', 'A').room; m.join('B', a.code, 'B');
+  assert.strictEqual(m.chat('nobody', 'hi').error, 'NO_ROOM');
+  const t0 = 1e6;
+  const ok = m.chat('A', '  hello   \n world\u0000 ', t0);
+  assert.strictEqual(ok.text, 'hello world', 'whitespace/control chars cleaned');
+  assert.strictEqual(ok.room, a);
+  assert.strictEqual(m.chat('A', '   ', t0 + 1000).error, 'EMPTY');
+  assert.strictEqual(m.chat('A', 'x'.repeat(500), t0 + 1000).text.length, 200, 'long messages are cut');
+  assert.strictEqual(m.chat('A', 'again', t0 + 1100).error, 'RATE', 'too fast (<300ms)');
+  assert.ok(m.chat('A', 'again', t0 + 1400).text, 'ok after 300 ms');
+  m.chat('A', '3', t0 + 1800); m.chat('A', '4', t0 + 2200);
+  assert.strictEqual(m.chat('A', '6th in 5s', t0 + 2600).error, 'RATE', 'burst limit');
+  assert.ok(m.chat('A', 'later', t0 + 7000).text, 'limit resets');
+  assert.ok(m.chat('B', 'B is independent', t0 + 1100).text, 'limits are per player');
+  assert.strictEqual(m.chat('B', '<b>hi</b>', t0 + 3000).text, '<b>hi</b>', 'markup kept as plain text (client uses textContent)');
+}
+console.log('Chat tests passed.');

@@ -20,6 +20,11 @@ Three.js r160 loads from the jsDelivr CDN, so you need an internet connection. R
   forwards pokes to the owner, and frees a player's crates if they leave. Everyone starts from the same layout when joining a room.
 - Dropped connections auto-reconnect and rejoin the same room if it still exists.
 
+## Text chat
+- Inside a room press **Enter** (or **T**) to open the chat box, type, **Enter** sends, **Esc** cancels (↑/↓ recall your last messages). While you type, movement and mouse look are paused.
+- Messages go through the server: max 200 characters, at most 5 per 5 seconds, shown only to people in your room, drawn as plain text. Admins get an ADMIN tag, the host a ★.
+- Recent lines fade after ~9 s and come back while you have the box open. Code: `js/chat.js`, `chat` handler in `server/server.js`, `npm test` covers the rules.
+
 ## Host controls + admin
 - **Host** (the room creator, shown with ★ in the player list): the menu has *Host controls* to **lock** the room, **set a new room code** (type 5 letters/numbers) or roll a **random** one.
   Everyone inside stays in the room; the old code stops working. A **locked** room refuses everyone except admins. Players who merely lose connection can still get back in for 60 s.
@@ -46,6 +51,7 @@ js/crates-sync.js   crate ownership + sync
 js/remote.js        remote avatars + snapshot interpolation + hand/feet animation
 js/bodyyaw.js       camera-independent body rotation
 js/combat.js        punch detection, hit handling, knockout state + HUD effects
+js/chat.js          in-room text chat
 js/multiplayer-ui.js menu panel, room HUD, join/leave toasts
 render.yaml, DEPLOY_RENDER.md, .env.example
 ```

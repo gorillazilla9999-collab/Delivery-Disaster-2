@@ -12,6 +12,7 @@ import { RemotePlayers } from './remote.js';
 import { Net } from './net.js';
 import { MultiplayerUI } from './multiplayer-ui.js';
 import { CrateSync } from './crates-sync.js';
+import { Chat } from './chat.js';
 import { Combat } from './combat.js';
 
 async function main() {
@@ -122,6 +123,7 @@ async function main() {
   net.onHit = (h) => combat.onHit(h);
   let needSpawn = false;
   const crateSync = new CrateSync(world.crates, physics, net);
+  const chat = new Chat({ net, input, toast: (t, k) => mpUI.toast(t, k) });
   net.crateSync = crateSync;
 
   net.onStatus = (state, text) => mpUI.setStatus(state, text);
@@ -130,6 +132,7 @@ async function main() {
     mpUI.setRoom(room);
     if (!room || !info.rejoined) dropCrate();
     combat.setActive(!!room);
+    chat.setActive(!!room);
     if (room) {
       if (!info.rejoined) crateSync.resetToHome();     // everybody starts from the same crate layout
       crateSync.setActive(true);

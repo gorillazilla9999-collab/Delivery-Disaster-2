@@ -37,6 +37,10 @@
     <ul id="rh-players"></ul>
   </div>
   <div id="toasts"></div>
+  <div id="chat" hidden>
+    <ul id="chat-log"></ul>
+    <input id="chat-input" type="text" maxlength="200" placeholder="Type a message - Enter to send, Esc to cancel" autocomplete="off" spellcheck="false" hidden>
+  </div>
   <div id="hitflash"></div>
   <div id="hp" hidden><span>HP</span><div id="hp-bar"><div id="hp-fill"></div></div></div>
   <div id="koscreen" hidden>
@@ -47,7 +51,7 @@
   <div id="hint">
     <b>WASD</b> move &middot; <b>Shift</b> run &middot; <b>Space</b> jump &middot;
     <b>LMB / RMB</b> punch &middot; <b>E</b> pick up / put down a crate &middot;
-    <b>V</b> third-person debug &middot; <b>Esc</b> menu / multiplayer
+    <b>Enter</b> chat &middot; <b>V</b> third-person debug &middot; <b>Esc</b> menu / multiplayer
   </div>
 
   <div id="overlay">
@@ -108,6 +112,7 @@
         <li><b>Mouse</b> look</li>
         <li><b>LMB / RMB</b> punch with left / right hand (shoves crates, and knocks out other players: 3 hits)</li>
         <li><b>E</b> pick up the crate you're looking at, <b>E</b> again to put it down; click while carrying to throw it</li>
+        <li><b>Enter</b> or <b>T</b> open chat (in a room), <b>Enter</b> send</li>
         <li><b>V</b> toggle third-person (debug)</li>
         <li><b>Esc</b> release mouse</li>
       </ul>

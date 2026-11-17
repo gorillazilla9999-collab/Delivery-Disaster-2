@@ -43,6 +43,7 @@ export class Net {
     this.onRoster = () => {};         // (roster, hostId)
     this.onNotice = () => {};         // (text, kind)  kind: join|leave|info|error
     this.onHit = () => {};            // ({ from, to, d, hp, ko, koMs, fromName, toName })
+    this.onChat = () => {};           // ({ id, name, text, t, host, admin })
     this.onAdmin = () => {};          // (isAdmin)
     this.onRoomUpdate = () => {};     // () room code / lock changed
     this.crateSync = null;            // set by main (CrateSync)
@@ -157,6 +158,7 @@ export class Net {
     socket.on('crates-released', (l) => this.crateSync?.onReleased(l));
     socket.on('crate-impulse', (d) => this.crateSync?.onImpulse(d));
     socket.on('hit', (h) => this.onHit(h));
+    socket.on('chat', (m) => { if (this.room) this.onChat(m); });
     socket.on('action', (a) => { const p = this.remotes.players.get(a.id); if (p && a.type === 'poke') p.poke(a.side); });
 
     // latency probe
@@ -224,6 +226,7 @@ export class Net {
     this.isAdmin = false; this._adminCode = null;
     this.onAdmin(false);
   }
+  sendChat(text) { return this._call('chat', { text }, 4000); }
   adminRooms() { return this._call('admin-rooms', {}); }
   adminKick(id) { return this._call('admin-kick', { id }); }
 

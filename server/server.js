@@ -201,6 +201,18 @@ io.on('connection', (socket) => {
     ack?.({ ok: true, name: res.player && res.player.name });
   });
 
+  // ---- text chat: validated + rate limited by the server, relayed to everyone in the room (sender included) ----
+  socket.on('chat', (data, ack) => {
+    if (typeof ack !== 'function') ack = null;
+    const res = rooms.chat(socket.id, data && data.text);
+    if (res.error) return ack?.({ ok: false, message: res.message });
+    io.to(res.room.code).emit('chat', {
+      id: socket.id, name: res.player.name, text: res.text, t: Date.now(),
+      host: res.room.hostId === socket.id, admin: !!socket.data.admin,
+    });
+    ack?.({ ok: true });
+  });
+
   socket.on('state', (s) => { rooms.setState(socket.id, s); });
 
   // one-shot animations (poke etc.), relayed only inside the sender's room
