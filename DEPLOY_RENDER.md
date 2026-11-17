@@ -34,6 +34,7 @@ Render provides `PORT` itself; the server listens on it and binds to `0.0.0.0`. 
 |---|---|---|
 | `PORT` | set by Render | Port to listen on |
 | `NODE_VERSION` | - | Set to `20` (or newer) to pin Node |
+| `ADMIN_CODE` | random each start (printed in the log) | **Set this** to a long secret. Enter it under *Admin* in the menu to join/kick/lock/re-code any room |
 | `MAX_PLAYERS` | `12` | Players per room (1-12; 12 is the hard cap) |
 | `PUBLIC_SERVER_URL` | empty = same origin | Only if the frontend is hosted on a different domain than the server |
 | `CORS_ORIGIN` | none | Only for a separately hosted frontend: allowed origin(s), comma separated |

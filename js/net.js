@@ -34,6 +34,8 @@ export class Net {
     this._lastSendAt = 0;
     this._pendingPings = 0;
     this.pingMs = null;
+    this.isAdmin = false;
+    this._adminCode = null;           // kept in memory only, so a dropped connection can log in again automatically
 
     // callbacks (set by main/UI)
     this.onStatus = () => {};         // (state, text)   state: unavailable|connecting|connected|reconnecting|error
@@ -41,6 +43,8 @@ export class Net {
     this.onRoster = () => {};         // (roster, hostId)
     this.onNotice = () => {};         // (text, kind)  kind: join|leave|info|error
     this.onHit = () => {};            // ({ from, to, d, hp, ko, koMs, fromName, toName })
+    this.onAdmin = () => {};          // (isAdmin)
+    this.onRoomUpdate = () => {};     // () room code / lock changed
     this.crateSync = null;            // set by main (CrateSync)
   }
 
@@ -83,7 +87,15 @@ export class Net {
       this.myId = socket.id;
       this.everConnected = true;
       this.onStatus('connected', 'Connected');
-      if (wasInRoom) this._rejoin();
+      const go = () => { if (wasInRoom) this._rejoin(); };
+      if (this._adminCode) {                         // admin rights belong to the socket: log in again before rejoining
+        socket.timeout(5000).emit('admin-login', { code: this._adminCode }, (err, res) => {
+          this.isAdmin = !err && !!(res && res.ok);
+          if (!this.isAdmin) this._adminCode = null;
+          this.onAdmin(this.isAdmin);
+          go();
+        });
+      } else go();
     });
 
     socket.on('hello', (h) => {
@@ -115,7 +127,29 @@ export class Net {
     socket.on('player-joined', (p) => this.onNotice(`${p.name} joined`, 'join'));
     socket.on('player-left', (p) => {
       this.remotes.remove(p.id);
-      this.onNotice(`${p.name || 'A player'} ${p.reason === 'disconnected' ? 'disconnected' : 'left'}`, 'leave');
+      this.onNotice(`${p.name || 'A player'} ${p.reason === 'disconnected' ? 'disconnected' : p.reason === 'kicked' ? 'was kicked' : 'left'}`, 'leave');
+    });
+    socket.on('room-code', (m) => {
+      if (!this.room) return;
+      this.room.code = m.code;
+      if (this.session) this.session.code = m.code;
+      this.onNotice(`Room code changed to ${m.code}`, 'info');
+      this.onRoomUpdate();
+    });
+    socket.on('room-lock', (m) => {
+      if (!this.room) return;
+      this.room.locked = !!m.locked;
+      this.onNotice(m.locked ? 'Room locked' : 'Room unlocked', 'info');
+      this.onRoomUpdate();
+    });
+    socket.on('kicked', () => {
+      this.session = null;
+      this.remotes.clear();
+      this.roster = [];
+      this.room = null;
+      this._lastSent = null;
+      this.onRoster([], null);
+      this.onRoom(null, { kicked: true });
     });
     socket.on('snapshot', (snap) => this._onSnapshot(snap));
     socket.on('crate-init', (list) => this.crateSync?.applyInit(list));
@@ -158,8 +192,8 @@ export class Net {
       this.socket.timeout(8000).emit(event, payload, (err, res) => {
         if (err) return resolve({ ok: false, message: 'Server did not respond. Try again.' });
         if (!res.ok) return resolve(res);
-        this.room = { code: res.code, max: res.max };
-        this.session = { code: res.code, name: res.name };
+        this.room = { code: res.code, max: res.max, locked: !!res.locked };
+        this.session = { code: res.code, name: res.name, token: res.token };
         this.myId = res.you;
         this._lastSent = null;
         this.onRoom(this.room, { name: res.name, created: event === 'create-room' });
@@ -168,11 +202,37 @@ export class Net {
     });
   }
 
+  // ---- host / admin ----
+  _call(event, payload, timeoutMs = 6000) {
+    return new Promise((resolve) => {
+      if (!this.socket || !this.socket.connected) return resolve({ ok: false, message: 'Not connected to the server.' });
+      this.socket.timeout(timeoutMs).emit(event, payload, (err, res) => resolve(err ? { ok: false, message: 'Server did not respond.' } : (res || { ok: false })));
+    });
+  }
+  get isHost() { return !!this.room && this.room.hostId === this.myId; }
+  setLock(locked, target) { return this._call('room-set-lock', { locked: !!locked, target }); }
+  setRoomCode(newCode, target) { return this._call('room-set-code', { newCode: newCode || '', target }); }
+  async adminLogin(code) {
+    const res = await this._call('admin-login', { code });
+    this.isAdmin = !!res.ok;
+    this._adminCode = res.ok ? code : null;
+    this.onAdmin(this.isAdmin);
+    return res;
+  }
+  async adminLogout() {
+    await this._call('admin-logout', {});
+    this.isAdmin = false; this._adminCode = null;
+    this.onAdmin(false);
+  }
+  adminRooms() { return this._call('admin-rooms', {}); }
+  adminKick(id) { return this._call('admin-kick', { id }); }
+
   _rejoin() {
-    const { code, name } = this.session;
-    this.socket.timeout(8000).emit('join-room', { code, name }, (err, res) => {
+    const { code, name, token } = this.session;
+    this.socket.timeout(8000).emit('join-room', { code, name, token }, (err, res) => {
       if (!err && res && res.ok) {
-        this.room = { code: res.code, max: res.max };
+        this.room = { code: res.code, max: res.max, locked: !!res.locked };
+        this.session.token = res.token;
         this.myId = res.you;
         this._lastSent = null;
         this.onRoom(this.room, { name: res.name, rejoined: true });
@@ -206,6 +266,8 @@ export class Net {
     if (!this.room || r.code !== this.room.code) return;
     this.roster = r.players;
     this.room.max = r.max;
+    this.room.locked = !!r.locked;
+    this.room.hostId = r.hostId;
     const ids = new Set(r.players.map((p) => p.id));
     for (const id of [...this.remotes.players.keys()]) if (!ids.has(id)) this.remotes.remove(id);
     for (const p of r.players) {

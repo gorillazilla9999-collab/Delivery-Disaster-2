@@ -11,5 +11,7 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: ADMIN_CODE        # set the value in the Render dashboard (kept out of git)
+        sync: false
       - key: MAX_PLAYERS
         value: 12

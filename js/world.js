@@ -1,4 +1,4 @@
-// Test environment: sky, lights, ground, static obstacles and pushable crates.
+// Test environment: sky, lights, ground, static obstacles and pushable crates + barrels.
 import * as THREE from 'three';
 import { Body } from './physics.js';
 
@@ -171,6 +171,56 @@ export function buildWorld({ scene, physics, renderer }) {
   crate(0.6, 3, 0, 4); crate(0.6, 4, 0, 5.5); crate(1.0, 6, 0, 2); crate(1.2, -6, 0, 6);
   crate(0.5, 0, 0, 0); crate(0.7, 2, 0, -5); crate(0.9, -2, 0, 7);
 
+  // --- pushable barrels ---
+  // Barrels are crates as far as physics, carrying and network sync go (they are appended to the same `crates`
+  // list, so every client gets the same index for each one). Collision is the usual AABB, so the cylinder is
+  // sized to fill its box: 0.6 m wide, 0.9 m tall.
+  const barrelBody = (g, s, base, band) => {
+    g.fillStyle = base; g.fillRect(0, 0, s, s);
+    const shade = g.createLinearGradient(0, 0, s, 0);                   // soft shading around the barrel
+    shade.addColorStop(0, 'rgba(0,0,0,.28)'); shade.addColorStop(0.5, 'rgba(255,255,255,.10)'); shade.addColorStop(1, 'rgba(0,0,0,.28)');
+    g.fillStyle = shade; g.fillRect(0, 0, s, s);
+    g.fillStyle = band;                                                  // raised hoops
+    for (const y of [0.04, 0.30, 0.70, 0.94]) g.fillRect(0, s * y - 4, s, 9);
+    g.fillStyle = 'rgba(0,0,0,.35)';
+    for (const y of [0.04, 0.30, 0.70, 0.94]) g.fillRect(0, s * y + 5, s, 2);
+    g.fillStyle = '#f4efe2'; g.font = 'bold 15px sans-serif'; g.textAlign = 'center';   // stencil
+    g.fillText('DANGER', s / 2, s * 0.50 - 2);
+    g.fillStyle = '#f2c230'; g.fillRect(s / 2 - 26, s * 0.54, 52, 5);
+    g.fillStyle = 'rgba(20,10,0,.18)';                                   // grime
+    for (let i = 0; i < 50; i++) g.fillRect(Math.random() * s, Math.random() * s, 2 + Math.random() * 14, 1);
+  };
+  const barrelCap = new THREE.MeshStandardMaterial({
+    map: canvasTexture(64, (g, s) => {
+      g.fillStyle = '#6b7078'; g.fillRect(0, 0, s, s);
+      g.strokeStyle = '#4a4e55'; g.lineWidth = 3;
+      for (const r of [0.46, 0.30]) { g.beginPath(); g.arc(s / 2, s / 2, s * r, 0, Math.PI * 2); g.stroke(); }
+      g.fillStyle = '#41454b'; g.beginPath(); g.arc(s * 0.68, s * 0.34, 5, 0, Math.PI * 2); g.fill();   // bung
+    }, 0, aniso),
+    roughness: 0.5, metalness: 0.6,
+  });
+  const barrelSides = {
+    red:  new THREE.MeshStandardMaterial({ map: canvasTexture(128, (g, s) => barrelBody(g, s, '#b83a2c', '#8f2a1f'), 0, aniso), roughness: 0.55, metalness: 0.35 }),
+    blue: new THREE.MeshStandardMaterial({ map: canvasTexture(128, (g, s) => barrelBody(g, s, '#2f6db3', '#22548c'), 0, aniso), roughness: 0.55, metalness: 0.35 }),
+  };
+  const BARREL_W = 0.6, BARREL_H = 0.9;
+  function barrel(x, y, z, color = 'red') {
+    const body = physics.add(new Body({ size: [BARREL_W, BARREL_H, BARREL_W], position: [x, y, z], mass: 1.6, dynamic: true, name: 'barrel' }));
+    const geo = new THREE.CylinderGeometry(BARREL_W / 2, BARREL_W / 2, BARREL_H, 28);
+    const mesh = new THREE.Mesh(geo, [barrelSides[color].clone(), barrelCap.clone(), barrelCap.clone()]);   // side, top, bottom
+    mesh.castShadow = mesh.receiveShadow = true;
+    scene.add(mesh);
+    body.mesh = mesh;
+    body.flash = 0;
+    body.home = [x, y, z];
+    crates.push(body);
+    return body;
+  }
+  // a tight cluster
+  barrel(6, 0, 7, 'red'); barrel(6.7, 0, 7.1, 'red'); barrel(6.35, 0, 7.75, 'blue');
+  // scattered about
+  barrel(-5, 0, 1, 'blue'); barrel(0, 0, 4, 'red'); barrel(-8, 0, -5, 'red'); barrel(4, 0, -4, 'blue');
+
   let highlighted = null;
   const hlColor = new THREE.Color(0x3a2a00), flashColor = new THREE.Color(0x8a6414);
 
@@ -182,8 +232,10 @@ export function buildWorld({ scene, physics, renderer }) {
       for (const b of crates) {
         b.mesh.position.set(b.pos.x, b.pos.y + b.h / 2, b.pos.z);
         b.flash = Math.max(0, b.flash - dt);
-        const em = b.mesh.material.emissive;
-        if (b.flash > 0) em.copy(flashColor); else if (b === highlighted) em.copy(hlColor); else em.setRGB(0, 0, 0);
+        const mats = Array.isArray(b.mesh.material) ? b.mesh.material : [b.mesh.material];   // barrels have several
+        for (const m of mats) {
+          if (b.flash > 0) m.emissive.copy(flashColor); else if (b === highlighted) m.emissive.copy(hlColor); else m.emissive.setRGB(0, 0, 0);
+        }
       }
       sun.position.copy(playerPos).addScaledVector(SUN_DIR, 70);
       sun.target.position.copy(playerPos);

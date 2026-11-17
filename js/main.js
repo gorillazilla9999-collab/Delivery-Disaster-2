@@ -139,12 +139,17 @@ async function main() {
     } else {
       crateSync.setActive(false);
       if (info.left) mpUI.toast('You left the room', 'info');
+      if (info.kicked) {
+        mpUI.showMessage('You were kicked from the room by an admin.', 'error');
+        mpUI.toast('You were kicked from the room', 'error');
+        if (document.pointerLockElement) document.exitPointerLock();
+      }
       if (info.lostConnection) mpUI.showMessage('Connection lost - trying to rejoin your room…', 'error');
       if (info.rejoinFailed) mpUI.showMessage('Could not rejoin your room (it may have closed or filled up).', 'error');
     }
   };
   net.onRoster = (players, hostId) => {
-    mpUI.setRoster(players, net.myId, net.room && net.room.max);
+    mpUI.setRoster(players, net.myId, net.room && net.room.max, hostId, net.room ? net.room.locked : false);
     if (needSpawn && net.room) {                // spread players around the spawn so nobody stacks
       needSpawn = false;
       const i = Math.max(0, players.findIndex((p) => p.id === net.myId));
@@ -162,6 +167,32 @@ async function main() {
     if (!res.ok) mpUI.showMessage(res.message || 'Could not join room.');
   };
   mpUI.onLeave = () => net.leaveRoom();
+
+  // --- host controls + admin ---
+  net.onRoomUpdate = () => { if (net.room) { mpUI.setRoom(net.room); mpUI.setRoster(net.roster, net.myId, net.room.max, net.room.hostId, net.room.locked); } };
+  net.onAdmin = (on) => { mpUI.setAdmin(on); if (on) refreshAdmin(); };
+  const refreshAdmin = async () => {
+    if (!net.isAdmin) return;
+    const res = await net.adminRooms();
+    if (res.ok) mpUI.renderAdminRooms(res.rooms);
+    else if (res.message === 'Not an admin.') { net.isAdmin = false; mpUI.setAdmin(false); }
+  };
+  const report = (res, okText) => { if (res.ok) { if (okText) mpUI.toast(okText, 'info'); } else mpUI.showMessage(res.message || 'That did not work.'); };
+  mpUI.onSetLock = async (locked) => { report(await net.setLock(locked)); };
+  mpUI.onSetCode = async (code) => { const res = await net.setRoomCode(code); report(res); return res.ok; };
+  mpUI.onAdminLogin = async (code) => {
+    const res = await net.adminLogin(code);
+    mpUI.showMessage(res.ok ? 'Admin unlocked.' : (res.message || 'Wrong admin code.'), res.ok ? 'info' : 'error');
+    return res.ok;
+  };
+  mpUI.onAdminLogout = () => net.adminLogout();
+  mpUI.onAdminRefresh = refreshAdmin;
+  mpUI.onAdminJoin = async (code) => { const res = await net.joinRoom(code, mpUI.name); if (!res.ok) mpUI.showMessage(res.message || 'Could not join room.'); };
+  const kick = async (id, name) => { report(await net.adminKick(id), `Kicked ${name || 'player'}`); refreshAdmin(); };
+  mpUI.onKick = kick;
+  mpUI.onAdminKick = kick;
+  mpUI.onAdminLock = async (code, locked) => { report(await net.setLock(locked, code)); refreshAdmin(); };
+  mpUI.onAdminNewCode = async (code) => { report(await net.setRoomCode('', code)); refreshAdmin(); };
   net.init().catch((e) => { console.error(e); mpUI.setStatus('unavailable', 'Multiplayer unavailable'); });
   setInterval(() => mpUI.setPing(net.socket && net.socket.connected ? net.pingMs : null), 2000);
 

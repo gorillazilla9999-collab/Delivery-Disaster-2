@@ -1,6 +1,7 @@
 // Delivery Disaster - Express + Socket.IO server (serves the game AND multiplayer).
 'use strict';
 const path = require('path');
+const crypto = require('crypto');
 const http = require('http');
 const express = require('express');
 const compression = require('compression');
@@ -14,6 +15,16 @@ const MAX_PLAYERS = Math.max(1, Math.min(12, parseInt(process.env.MAX_PLAYERS, 1
 const TICK_HZ = 20;
 const CORS_ORIGIN = (process.env.CORS_ORIGIN || '').trim();
 const PUBLIC_SERVER_URL = (process.env.PUBLIC_SERVER_URL || '').trim().replace(/\/+$/, '');
+
+// ---- admin code: lets its holder join ANY room (even locked / full ones), kick players and change room codes ----
+// Set ADMIN_CODE in the environment. If it is missing a random one is generated and printed in the server log.
+let ADMIN_CODE = (process.env.ADMIN_CODE || '').trim();
+const ADMIN_FROM_ENV = !!ADMIN_CODE;
+if (!ADMIN_CODE) ADMIN_CODE = crypto.randomBytes(6).toString('hex');
+const sha = (v) => crypto.createHash('sha256').update(String(v)).digest();
+const ADMIN_HASH = sha(ADMIN_CODE);
+const checkAdminCode = (v) => typeof v === 'string' && v.length <= 200 && crypto.timingSafeEqual(sha(v), ADMIN_HASH);
+const failures = new Map();                                 // ip -> { n, until }   (brute-force protection)
 
 const app = express();
 app.disable('x-powered-by');
@@ -55,17 +66,19 @@ const io = new Server(server, {
 });
 
 const emitRoster = (room) => io.to(room.code).emit('roster', {
-  code: room.code, max: rooms.maxPlayers, hostId: room.hostId, players: rooms.publicPlayers(room),
+  code: room.code, max: rooms.maxPlayers, hostId: room.hostId, locked: room.locked, players: rooms.publicPlayers(room),
 });
 
 io.on('connection', (socket) => {
   socket.emit('hello', { id: socket.id, maxPlayers: MAX_PLAYERS, serverTime: Date.now() });
+  socket.data.admin = false;
+  const ip = String(socket.handshake.headers['x-forwarded-for'] || socket.handshake.address || '').split(',').pop().trim();
 
   const enter = (res, ack) => {
     if (res.error) return ack?.({ ok: false, error: res.error, message: res.message });
     const { room, player } = res;
     socket.join(room.code);
-    ack?.({ ok: true, code: room.code, you: socket.id, name: player.name, max: rooms.maxPlayers });
+    ack?.({ ok: true, code: room.code, you: socket.id, name: player.name, max: rooms.maxPlayers, locked: room.locked, token: player.token, admin: socket.data.admin });
     socket.emit('crate-init', rooms.crateInit(room));                 // current state of every moved crate
     socket.to(room.code).emit('player-joined', { id: player.id, name: player.name });
     emitRoster(room);
@@ -79,12 +92,12 @@ io.on('connection', (socket) => {
 
   socket.on('join-room', (data, ack) => {
     if (typeof ack !== 'function') ack = null;
-    try { enter(rooms.join(socket.id, data && data.code, data && data.name), ack); }
+    try { enter(rooms.join(socket.id, data && data.code, data && data.name, { admin: socket.data.admin, token: data && data.token }), ack); }
     catch (e) { console.error(e); ack?.({ ok: false, error: 'SERVER', message: 'Could not join room.' }); }
   });
 
   const leave = (reason) => {
-    const res = rooms.leave(socket.id);
+    const res = rooms.leave(socket.id, reason);
     if (!res) return;
     socket.leave(res.room.code);
     if (!res.closed) {
@@ -96,6 +109,79 @@ io.on('connection', (socket) => {
 
   socket.on('leave-room', (_d, ack) => { leave('left'); if (typeof ack === 'function') ack({ ok: true }); });
   socket.on('disconnect', () => leave('disconnected'));
+
+  // ---- host controls: the host (or an admin) can lock the room and change its code ----
+  // data.target (admin only) lets an admin act on a room they are not inside.
+  const controlledRoom = (data) => {
+    if (socket.data.admin && data && data.target) return rooms.rooms.get(rooms.normaliseCode(data.target)) || null;
+    const room = rooms.roomOf(socket.id);
+    if (!room) return null;
+    return (room.hostId === socket.id || socket.data.admin) ? room : null;
+  };
+
+  socket.on('room-set-lock', (data, ack) => {
+    if (typeof ack !== 'function') ack = null;
+    const room = controlledRoom(data);
+    if (!room) return ack?.({ ok: false, message: 'Only the room host can do that.' });
+    const locked = rooms.setLocked(room, data && data.locked);
+    io.to(room.code).emit('room-lock', { locked });
+    emitRoster(room);
+    ack?.({ ok: true, locked });
+  });
+
+  socket.on('room-set-code', (data, ack) => {
+    if (typeof ack !== 'function') ack = null;
+    const room = controlledRoom(data);
+    if (!room) return ack?.({ ok: false, message: 'Only the room host can do that.' });
+    const res = rooms.setCode(room, data && data.newCode);
+    if (res.error) return ack?.({ ok: false, message: res.message });
+    // move every socket of the room onto the new Socket.IO channel
+    io.in(res.oldCode).socketsJoin(res.code);
+    io.in(res.oldCode).socketsLeave(res.oldCode);
+    io.to(res.code).emit('room-code', { code: res.code, oldCode: res.oldCode });
+    emitRoster(room);
+    ack?.({ ok: true, code: res.code });
+  });
+
+  // ---- admin ----
+  socket.on('admin-login', (data, ack) => {
+    if (typeof ack !== 'function') ack = null;
+    const f = failures.get(ip) || { n: 0, until: 0 };
+    if (Date.now() < f.until) return ack?.({ ok: false, message: 'Too many wrong codes. Wait a bit and try again.' });
+    if (!checkAdminCode(data && data.code)) {
+      f.n++; if (f.n >= 5) { f.until = Date.now() + 30000; f.n = 0; }
+      failures.set(ip, f);
+      return ack?.({ ok: false, message: 'Wrong admin code.' });
+    }
+    failures.delete(ip);
+    socket.data.admin = true;
+    ack?.({ ok: true });
+  });
+
+  socket.on('admin-logout', (_d, ack) => { socket.data.admin = false; if (typeof ack === 'function') ack({ ok: true }); });
+
+  socket.on('admin-rooms', (_d, ack) => {
+    if (typeof ack !== 'function') return;
+    if (!socket.data.admin) return ack({ ok: false, message: 'Not an admin.' });
+    ack({ ok: true, rooms: rooms.adminList() });
+  });
+
+  socket.on('admin-kick', (data, ack) => {
+    if (typeof ack !== 'function') ack = null;
+    if (!socket.data.admin) return ack?.({ ok: false, message: 'Not an admin.' });
+    const id = data && typeof data.id === 'string' ? data.id : '';
+    if (!id || id === socket.id) return ack?.({ ok: false, message: 'You cannot kick yourself (use Leave Room).' });
+    const target = io.sockets.sockets.get(id);
+    const res = rooms.leave(id, 'kicked');
+    if (!res) return ack?.({ ok: false, message: 'That player is no longer in a room.' });
+    if (target) { target.emit('kicked', { code: res.room.code }); target.leave(res.room.code); }
+    if (!res.closed) {
+      if (res.releasedCrates.length) io.to(res.room.code).emit('crates-released', res.releasedCrates);
+      io.to(res.room.code).emit('player-left', { id, name: res.player && res.player.name, reason: 'kicked' });
+      emitRoster(res.room);
+    }
+    ack?.({ ok: true, name: res.player && res.player.name });
+  });
 
   socket.on('state', (s) => { rooms.setState(socket.id, s); });
 
@@ -151,6 +237,8 @@ setInterval(() => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Delivery Disaster server listening on http://${HOST}:${PORT} (max ${MAX_PLAYERS} players/room)`);
+  if (ADMIN_FROM_ENV) console.log('Admin code: set via ADMIN_CODE.');
+  else console.log(`Admin code (no ADMIN_CODE set, generated for this run): ${ADMIN_CODE}`);
 });
 
 function shutdown() {

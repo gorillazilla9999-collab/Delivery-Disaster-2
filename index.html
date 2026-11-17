@@ -71,9 +71,31 @@
           <div class="mp-codebox">Room code <b id="mp-roomcode">-----</b> <button id="mp-copy" class="mp-mini" type="button">Copy</button></div>
           <div class="mp-count"><span id="mp-count">1</span> / <span id="mp-max">12</span> players</div>
           <ul id="mp-players"></ul>
+          <div id="mp-host" hidden>
+            <div class="mp-hosttitle">Host controls</div>
+            <button id="mp-lock" class="mp-btn mp-small" type="button">Lock room</button>
+            <div class="mp-row">
+              <input id="mp-newcode" type="text" maxlength="5" placeholder="NEW CODE" autocomplete="off" spellcheck="false">
+              <button id="mp-setcode" class="mp-btn mp-small" type="button">Set code</button>
+            </div>
+            <button id="mp-randcode" class="mp-mini" type="button">Random new code</button>
+          </div>
           <button id="mp-leave" class="mp-btn mp-danger">Leave Room</button>
         </div>
         <p id="mp-msg" hidden></p>
+        <details id="mp-admin">
+          <summary>Admin</summary>
+          <div id="mp-admin-login" class="mp-row">
+            <input id="mp-admincode" type="password" placeholder="Admin code" autocomplete="off" spellcheck="false">
+            <button id="mp-adminlogin" class="mp-btn mp-small" type="button">Unlock</button>
+          </div>
+          <div id="mp-admin-panel" hidden>
+            <div class="mp-row2"><b>All rooms</b>
+              <span><button id="mp-adminrefresh" class="mp-mini" type="button">Refresh</button>
+              <button id="mp-adminlogout" class="mp-mini" type="button">Log out</button></span></div>
+            <div id="mp-admin-rooms"></div>
+          </div>
+        </details>
       </div>
       <div id="settings">
         <label for="sens">Mouse sensitivity <output id="sensval">1.0</output></label>

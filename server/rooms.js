@@ -1,5 +1,6 @@
 // Pure room logic (no sockets in here) so it can be unit-tested.
 'use strict';
+const crypto = require('crypto');
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I, O, 0, 1
 const CODE_LENGTH = 5;
@@ -14,6 +15,7 @@ const PUNCH = {
   cooldownMs: 220,       // per attacker
   maxRange: 5,           // metres between the two players' last known positions (lag tolerant)
 };
+const REJOIN_GRACE = 60000;      // ms a dropped player may come back into a LOCKED room with their rejoin token
 const OWNER_TIMEOUT = 800;      // ms without updates before another player may take a crate over
 
 function clampNum(v, lo, hi, fallback = 0) {
@@ -50,18 +52,22 @@ class RoomManager {
   create(id, name) {
     if (this.byPlayer.has(id)) return { error: 'ALREADY_IN_ROOM', message: 'Leave your current room first.' };
     const code = this.generateCode();
-    const room = { code, players: new Map(), createdAt: Date.now(), hostId: id, crates: new Map() };
+    const room = { code, players: new Map(), createdAt: Date.now(), hostId: id, crates: new Map(), locked: false, tokens: new Map() };
     this.rooms.set(code, room);
     return this._add(room, id, name);
   }
 
-  join(id, rawCode, name) {
+  // opts.admin: the caller has the admin code -> bypasses lock and player cap.
+  // opts.token: rejoin token from an earlier visit (lets a dropped player back into a locked room).
+  join(id, rawCode, name, opts = {}) {
     if (this.byPlayer.has(id)) return { error: 'ALREADY_IN_ROOM', message: 'Leave your current room first.' };
     const code = this.normaliseCode(rawCode);
     if (code.length !== CODE_LENGTH) return { error: 'BAD_CODE', message: 'Room codes have 5 letters/numbers.' };
     const room = this.rooms.get(code);
     if (!room) return { error: 'NOT_FOUND', message: `No room with code ${code}.` };
-    if (room.players.size >= this.maxPlayers) return { error: 'ROOM_FULL', message: `Room ${code} is full (${this.maxPlayers}/${this.maxPlayers}).` };
+    if (room.locked && !opts.admin && !this.hasToken(room, opts.token)) return { error: 'ROOM_LOCKED', message: `Room ${code} is locked by its host.` };
+    if (room.players.size >= this.maxPlayers && !opts.admin) return { error: 'ROOM_FULL', message: `Room ${code} is full (${this.maxPlayers}/${this.maxPlayers}).` };
+    if (opts.token) room.tokens.delete(opts.token);                  // rejoin tokens are single-use; a fresh one is issued on entry
     return this._add(room, id, name);
   }
 
@@ -71,14 +77,25 @@ class RoomManager {
     let final = base, n = 2;
     while (taken.has(final.toLowerCase())) final = `${base.slice(0, 13)} ${n++}`;
     const player = { id, name: final, joinedAt: Date.now(), state: null, dirty: false, lastStateAt: 0, lastCratesAt: 0,
-      hp: PUNCH.maxHp, lastHitAt: 0, koUntil: 0, invulnUntil: 0, lastPunchAt: 0 };
+      hp: PUNCH.maxHp, lastHitAt: 0, koUntil: 0, invulnUntil: 0, lastPunchAt: 0,
+      token: crypto.randomBytes(12).toString('hex') };
     room.players.set(id, player);
+    room.tokens.set(player.token, Infinity);
     this.byPlayer.set(id, room.code);
     return { room, player };
   }
 
+  hasToken(room, token) {
+    if (typeof token !== 'string') return false;
+    const exp = room.tokens.get(token);
+    if (exp === undefined) return false;
+    if (exp < Date.now()) { room.tokens.delete(token); return false; }
+    return true;
+  }
+
   // Returns { room, player, closed } or null if the socket was not in a room.
-  leave(id) {
+  // `reason`: 'disconnected' keeps the rejoin token alive for a short grace period; anything else (left, kicked) revokes it.
+  leave(id, reason = 'left') {
     const code = this.byPlayer.get(id);
     if (!code) return null;
     this.byPlayer.delete(id);
@@ -86,11 +103,44 @@ class RoomManager {
     if (!room) return null;
     const player = room.players.get(id);
     const releasedCrates = this.releaseCrates(id, room);
+    if (player && player.token) {
+      if (reason === 'disconnected') room.tokens.set(player.token, Date.now() + REJOIN_GRACE);
+      else room.tokens.delete(player.token);
+    }
     room.players.delete(id);
     let closed = false;
     if (room.players.size === 0) { this.rooms.delete(code); closed = true; }
     else if (room.hostId === id) room.hostId = room.players.keys().next().value;
     return { room, player, closed, releasedCrates };
+  }
+
+  // ---- host / admin controls ----
+  setLocked(room, locked) { room.locked = !!locked; return room.locked; }
+
+  // Change a room's code (empty / null = random). Players stay in the room; the old code stops working.
+  setCode(room, raw) {
+    const oldCode = room.code;
+    let code;
+    if (raw == null || String(raw).trim() === '') code = this.generateCode();
+    else {
+      code = this.normaliseCode(raw);
+      if (code.length !== CODE_LENGTH) return { error: 'BAD_CODE', message: 'Room codes have 5 letters/numbers.' };
+    }
+    if (code === oldCode) return { error: 'SAME_CODE', message: 'That is already the room code.' };
+    if (this.rooms.has(code)) return { error: 'CODE_TAKEN', message: `Code ${code} is already used by another room.` };
+    this.rooms.delete(oldCode);
+    room.code = code;
+    this.rooms.set(code, room);
+    for (const pid of room.players.keys()) this.byPlayer.set(pid, code);
+    return { room, oldCode, code };
+  }
+
+  // Admin overview: every room with its players.
+  adminList() {
+    return [...this.rooms.values()].map((r) => ({
+      code: r.code, locked: r.locked, hostId: r.hostId, max: this.maxPlayers,
+      players: [...r.players.values()].map((p) => ({ id: p.id, name: p.name })),
+    }));
   }
 
   roomOf(id) {
@@ -217,4 +267,4 @@ class RoomManager {
   }
 }
 
-module.exports = { PUNCH, RoomManager, MAX_CRATES, CODE_ALPHABET, CODE_LENGTH, cleanName };
+module.exports = { REJOIN_GRACE, PUNCH, RoomManager, MAX_CRATES, CODE_ALPHABET, CODE_LENGTH, cleanName };

@@ -100,3 +100,51 @@ console.log('All room tests passed.');
   assert.strictEqual(m.punch('X', 'B', t + 99999), null, 'cannot punch players in another room');
   console.log('Punch tests passed.');
 }
+
+// ---- lock / admin / code change / rejoin tokens ----
+{
+  const m = new RoomManager({ maxPlayers: 2 });
+  const a = m.create('A', 'A'); const room = a.room; const code = room.code;
+  assert.strictEqual(room.locked, false);
+  assert.ok(m.join('B', code, 'B').room, 'unlocked: anyone joins');
+  m.leave('B');
+  m.setLocked(room, true);
+  assert.strictEqual(m.join('C', code, 'C').error, 'ROOM_LOCKED', 'locked blocks joins');
+  assert.strictEqual(m.join('C', code, 'C', { token: 'nope' }).error, 'ROOM_LOCKED', 'bad token blocked');
+  const adm = m.join('ADM', code, 'Admin', { admin: true });
+  assert.ok(adm.room, 'admin joins locked room');
+  assert.ok(m.join('ADM2', code, 'Admin2', { admin: true }).room, 'admin bypasses the player cap (2/2)');
+  assert.strictEqual(m.join('Z', code, 'Z', { admin: false }).error, 'ROOM_LOCKED');
+  m.leave('ADM2'); m.leave('ADM');
+
+  // a dropped player can come back to a locked room with their token (for a while), a kicked/left one cannot
+  const tok = room.players.get('A').token; assert.ok(tok && tok.length >= 16);
+  m.join('B', code, 'B', { admin: true }); const btok = room.players.get('B').token;
+  m.leave('B', 'disconnected');
+  assert.ok(m.join('B2', code, 'B', { token: btok }).room, 'token lets a dropped player back into a locked room');
+  m.leave('B2', 'kicked');
+  assert.strictEqual(m.join('B3', code, 'B', { token: btok }).error, 'ROOM_LOCKED', 'kicked: token revoked (old token)');
+  assert.ok(!room.tokens.has(btok), 'used token is consumed');
+  m.leave('B', 'disconnected'); // no-op, not in room
+  room.tokens.set('old', Date.now() - 1);
+  assert.strictEqual(m.hasToken(room, 'old'), false, 'expired token');
+
+  // code change
+  const m2 = new RoomManager();
+  const r1 = m2.create('A', 'A').room, r2 = m2.create('B', 'B').room;
+  m2.join('C', r1.code, 'C');
+  const old = r1.code;
+  assert.strictEqual(m2.setCode(r1, 'ab').error, 'BAD_CODE');
+  assert.strictEqual(m2.setCode(r1, r2.code).error, 'CODE_TAKEN');
+  assert.strictEqual(m2.setCode(r1, old).error, 'SAME_CODE');
+  const res = m2.setCode(r1, 'zz9ab');
+  assert.strictEqual(res.code, 'ZZ9AB');
+  assert.ok(!m2.rooms.has(old) && m2.rooms.get('ZZ9AB') === r1, 'room re-keyed');
+  assert.strictEqual(m2.join('X', old, 'X').error, 'NOT_FOUND', 'old code is dead');
+  assert.strictEqual(m2.roomOf('A'), r1); assert.strictEqual(m2.roomOf('C'), r1, 'players stay in the room');
+  assert.ok(m2.join('X', 'zz9ab', 'X').room, 'new code works');
+  const rnd = m2.setCode(r1, ''); assert.ok(/^[A-HJ-NP-Z2-9]{5}$/.test(rnd.code), 'random code');
+  assert.deepStrictEqual(m2.adminList().map((r) => r.code).sort(), [r1.code, r2.code].sort());
+  assert.ok(m2.leave('C').room === r1, 'leave works after code change');
+}
+console.log('Lock/admin/code tests passed.');

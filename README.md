@@ -15,10 +15,19 @@ Three.js r160 loads from the jsDelivr CDN, so you need an internet connection. R
 - Everyone's position, look direction, walk/run/jump state, hand pokes (LMB/RMB) and reaching (E) are synced at 20 Hz
   and interpolated ~120 ms behind; other players are full copies of `person.glb` (head, torso, floating hands and feet).
 - The body turns independently of the camera (it follows you when you move, and is dragged along beyond a neck limit).
-- **Crates are synced too.** Whoever sets a crate moving owns it: they simulate it and stream its state, everyone else
+- **Crates and barrels are synced too** (barrels are just crates with a cylinder look: same pushing, carrying, throwing and sync). Whoever sets a crate moving owns it: they simulate it and stream its state, everyone else
   follows it smoothly. The server arbitrates when two players grab the same crate, gives late joiners the current layout,
   forwards pokes to the owner, and frees a player's crates if they leave. Everyone starts from the same layout when joining a room.
 - Dropped connections auto-reconnect and rejoin the same room if it still exists.
+
+## Host controls + admin
+- **Host** (the room creator, shown with ★ in the player list): the menu has *Host controls* to **lock** the room, **set a new room code** (type 5 letters/numbers) or roll a **random** one.
+  Everyone inside stays in the room; the old code stops working. A **locked** room refuses everyone except admins. Players who merely lose connection can still get back in for 60 s.
+- **Admin**: set the `ADMIN_CODE` environment variable (copy `.env.example`; if it is empty a random code is printed in the server log at start-up).
+  Esc menu -> **Admin** -> enter the code. You then see **all rooms** with their players and can **Join** any room (locked or full too), **Kick** any player, **Lock/Unlock** a room and give it a **New code**.
+  While inside a room you also get the Host controls and a Kick button next to every player, whoever the host is. Wrong codes are rate-limited (5 tries, then 30 s wait).
+- A kicked player is sent back to the menu and may rejoin with the code unless the room is locked.
+- Server-side logic lives in `server/rooms.js` / `server/server.js` and is covered by `npm test`.
 
 ## Punching + knockouts
 - Punch another player (LMB / RMB) to shove them back. **3 hits** knock them out: they fall over and can't move or act for 5 s, then get back up
