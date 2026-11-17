@@ -32,9 +32,11 @@ const PUBLIC_SERVER_URL = (process.env.PUBLIC_SERVER_URL || '').trim().replace(/
 
 // ---- admin code: lets its holder join ANY room (even locked / full ones), kick players and change room codes ----
 // Set ADMIN_CODE in the environment. If it is missing a random one is generated and printed in the server log.
+// Fallback used when ADMIN_CODE is not set anywhere. Change it (or set ADMIN_CODE) before sharing the project/source publicly.
+const DEFAULT_ADMIN_CODE = 'fdiugfigyeygiuehgewuhkgewiuh';
 let ADMIN_CODE = (process.env.ADMIN_CODE || '').trim();
 const ADMIN_FROM_ENV = !!ADMIN_CODE;
-if (!ADMIN_CODE) ADMIN_CODE = crypto.randomBytes(6).toString('hex');
+if (!ADMIN_CODE) ADMIN_CODE = DEFAULT_ADMIN_CODE;
 const sha = (v) => crypto.createHash('sha256').update(String(v)).digest();
 const ADMIN_HASH = sha(ADMIN_CODE);
 const checkAdminCode = (v) => typeof v === 'string' && v.length <= 200 && crypto.timingSafeEqual(sha(v), ADMIN_HASH);
@@ -163,6 +165,8 @@ io.on('connection', (socket) => {
     const f = failures.get(ip) || { n: 0, until: 0 };
     if (Date.now() < f.until) return ack?.({ ok: false, message: 'Too many wrong codes. Wait a bit and try again.' });
     if (!checkAdminCode(data && data.code)) {
+      const typed = data && typeof data.code === 'string' ? data.code : '';
+      console.log(`Admin login FAILED: you typed ${typed.length} characters, the server expects ${ADMIN_CODE.length} (${ADMIN_FROM_ENV ? 'from ADMIN_CODE' : 'built-in default'}).`);
       f.n++; if (f.n >= 5) { f.until = Date.now() + 30000; f.n = 0; }
       failures.set(ip, f);
       return ack?.({ ok: false, message: 'Wrong admin code.' });
@@ -253,7 +257,8 @@ server.listen(PORT, HOST, () => {
   console.log(`Delivery Disaster server listening on http://${HOST}:${PORT} (max ${MAX_PLAYERS} players/room)`);
   console.log(`.env file: ${ENV_FILE_LOADED ? 'loaded' : 'not found (using real environment variables only)'}`);
   if (ADMIN_FROM_ENV) console.log(`Admin code: set via ADMIN_CODE (${ADMIN_CODE.length} characters).`);
-  else console.log(`Admin code (no ADMIN_CODE set, generated for this run): ${ADMIN_CODE}`);
+  else console.log('Admin code: ADMIN_CODE not set, using the built-in default from server/server.js.');
+  console.log('Server build: admin-v4');
 });
 
 function shutdown() {
