@@ -4,7 +4,7 @@
 // ORIENTATION and spin); everybody else treats it as a kinematic (network-positioned) body and interpolates it,
 // including a spherical interpolation of its rotation. When it rests, the owner releases it.
 // The server arbitrates conflicting claims, replays state to late joiners and frees crates on disconnect.
-import { quatSlerp, quatAngularVelocity, Quat } from './physics.js';
+import { quatSlerp, quatAngularVelocity, Quat, PARK_Y } from './physics.js';
 
 const SEND_INTERVAL = 50;      // ms
 const REST_SPEED = 0.05;       // m/s
@@ -38,6 +38,8 @@ export class CrateSync {
   isRemoteOwned(body) { const i = this.indexOf(body); return i >= 0 && !!this.st[i].owner && this.st[i].owner !== 'me'; }
 
   _place(b, x, y, z, q) {                    // snap a crate to a pose and let it settle as a normal local body
+    if (y < -48) { b.park(); return; }       // the network's way of saying "out of play"
+    b.unpark();
     b.pos.set(x, y, z); b.vel.set(0, 0, 0); b.angVel.set(0, 0, 0);
     if (q) b.quat.set(q[0], q[1], q[2], q[3]).normalize(); else b.quat.set(0, 0, 0, 1);
     b.updateBounds();
@@ -47,8 +49,8 @@ export class CrateSync {
   // Called when entering a room: everybody starts from the same layout.
   resetToHome() {
     this.crates.forEach((b, i) => {
-      this._place(b, b.home[0], b.home[1], b.home[2], null);
       b.kinematic = false; b.onGround = false;
+      this._place(b, b.home[0], b.home[1], b.home[2], null);    // spawn-pool items have a parked home
       Object.assign(this.st[i], { owner: null, buf: [], rest: 0, lastSent: null, dirty: false });
     });
   }
@@ -60,6 +62,37 @@ export class CrateSync {
 
   releaseAllLocal() {
     this.crates.forEach((b, i) => { const s = this.st[i]; s.owner = null; s.buf = []; b.kinematic = false; b.vel.set(0, 0, 0); b.angVel.set(0, 0, 0); b.wake(); });
+  }
+
+  // ---- spawning / despawning ----
+  // Put a (parked) crate into the world and stream it as ours. Everybody else unparks it when the first update arrives.
+  spawn(body, x, y, z, vel = null, quat = null) {
+    const i = this.indexOf(body); if (i < 0) return false;
+    this._place(body, x, y, z, quat ? [quat.x, quat.y, quat.z, quat.w] : null);
+    if (vel) body.vel.set(vel.x, vel.y, vel.z);
+    const s = this.st[i]; s.owner = 'me'; s.rest = 0; s.dirty = true; s.held = false; s.buf = [];
+    return true;
+  }
+  // Take a crate out of play for everybody (crushed, deleted).
+  park(body) {
+    const i = this.indexOf(body); if (i < 0) return;
+    const s = this.st[i];
+    body.park(); s.owner = null; s.buf = []; s.held = false; s.rest = 0; s.dirty = false; s.lastSent = null;
+    if (this.active) this.net.sendCrates([entryOf(i, body, 1)]);
+  }
+  // Bring a parked crate back at a pose (respawn at its home).
+  restore(body, x, y, z) {
+    const i = this.indexOf(body); if (i < 0) return;
+    this._place(body, x, y, z, null);
+    const s = this.st[i]; s.owner = null; s.buf = []; s.rest = 0;
+    if (this.active) this.net.sendCrates([entryOf(i, body, 1)]);
+  }
+  // Who gets to decide that a crate was crushed / removed: its owner, or (if free) the room host, or us when playing solo.
+  isAuthority(body) {
+    const i = this.indexOf(body); if (i < 0) return false;
+    if (!this.active) return true;
+    const o = this.st[i].owner;
+    return o === 'me' || (!o && this.net.isHost);
   }
 
   // ---- incoming ----
@@ -88,6 +121,8 @@ export class CrateSync {
         this._place(b, e[1], e[2], e[3], hasQ ? [e[8], e[9], e[10], e[11]] : null);
         continue;
       }
+      if (e[2] < -48) { s.owner = null; s.buf = []; b.park(); continue; }   // despawned / crushed
+      if (b.parked) b.unpark();                                            // freshly spawned by somebody
       if (s.owner === 'me') { s.owner = msg.from; s.buf = []; }          // somebody else won the claim: yield
       s.owner = msg.from;
       b.kinematic = true;
@@ -139,7 +174,7 @@ export class CrateSync {
     const rt = this.net.renderTimeSec(), now = performance.now() / 1000;
     this.crates.forEach((b, i) => {
       const s = this.st[i];
-      if (!s.owner || s.owner === 'me') return;
+      if (b.parked || !s.owner || s.owner === 'me') return;
       if (now - s.lastRecv > STALE_OWNER) { s.owner = null; s.buf = []; b.kinematic = false; b.vel.set(0, 0, 0); b.angVel.set(0, 0, 0); b.wake(); return; }
       const buf = s.buf; if (!buf.length) return;
       const q = this._q, p = this._p;
@@ -169,7 +204,7 @@ export class CrateSync {
     const due = nowMs - this._lastSendAt >= SEND_INTERVAL;
     this.crates.forEach((b, i) => {
       const s = this.st[i];
-      if (s.owner && s.owner !== 'me') return;
+      if (b.parked || (s.owner && s.owner !== 'me')) return;
       const speed = b.speed, spin = b.spin;
       if (!s.owner) {
         if (speed > MOVE_SPEED || spin > MOVE_SPIN || (!b.onGround && !b.sleeping && speed > 0.02)) {   // started moving -> claim it

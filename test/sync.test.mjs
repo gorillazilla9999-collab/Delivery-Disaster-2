@@ -48,6 +48,7 @@ function client(id) {
     b.home = [x, 0.451, z]; crates.push(b); return b;
   };
   crate(0.8, -2, 0); crate(0.6, 2, 0); barrel(0, 0); barrel(3.5, 0.1);
+  const pooled = crate(0.5, 0, 0); pooled.home = [0, -49, 0]; pooled.pool = 'crate-s';        // spawn-pool item: starts parked
   const net = new FakeNet(id);
   const sync = new CrateSync(crates, physics, net);
   sync.resetToHome(); sync.setActive(true);
@@ -113,6 +114,46 @@ test('a poke on the other client works the same way, in both directions', () => 
   assert.ok(B.crates[0].pos.z > 0.3, 'B shoved the crate');
   const a = A.crates[0], b = B.crates[0];
   assert.ok(Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z) < 0.1, 'A agrees');
+});
+
+// ---- spawn tool + crusher: parked pool items, spawning, despawning ----
+const poolIdx = A.crates.length - 1;
+test('pool items start parked (invisible, no collisions) on both clients', () => {
+  assert.ok(A.crates[poolIdx].parked && B.crates[poolIdx].parked);
+  assert.ok(A.crates[poolIdx].pos.y < -40);
+});
+A.sync.spawn(A.crates[poolIdx], 5, 2, 3, { x: 0, y: 0, z: 0 }, null);
+settle(0.6);
+test('a spawned item appears on the other client too and falls', () => {
+  assert.ok(!B.crates[poolIdx].parked, 'unparked on B');
+  assert.ok(Math.hypot(A.crates[poolIdx].pos.x - B.crates[poolIdx].pos.x, A.crates[poolIdx].pos.z - B.crates[poolIdx].pos.z) < 0.3);
+});
+settle(4);
+test('it lands and both clients agree where it came to rest', () => {
+  const a = A.crates[poolIdx], b = B.crates[poolIdx];
+  assert.ok(Math.abs(a.min.y) < 0.02, `rest height ${a.min.y}`);
+  assert.ok(Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y, a.pos.z - b.pos.z) < 0.05);
+});
+test('a late joiner is told about the spawned item (and about parked ones)', () => {
+  const init = rooms.crateInit(created.room);
+  const e = init.find((x) => x[0] === poolIdx);
+  assert.ok(e && e[2] > -1 && e[7] === null, 'spawned item present with position, no owner');
+});
+A.sync.park(A.crates[poolIdx]);                              // crushed / removed
+settle(0.5);
+test('despawning parks it for everybody and frees the slot', () => {
+  assert.ok(A.crates[poolIdx].parked && B.crates[poolIdx].parked);
+  const init = rooms.crateInit(created.room).find((x) => x[0] === poolIdx);
+  assert.ok(init && init[2] < -48, 'server remembers it as parked');
+});
+A.sync.spawn(A.crates[poolIdx], -5, 1, 3, null, null);       // the slot can be reused
+settle(1);
+test('a freed slot can be spawned again', () => assert.ok(!A.crates[poolIdx].parked && !B.crates[poolIdx].parked));
+// a map crate that gets crushed comes back at home
+A.sync.park(A.crates[1]); settle(0.3);
+A.sync.restore(A.crates[1], A.crates[1].home[0], A.crates[1].home[1], A.crates[1].home[2]); settle(1);
+test('a crushed map crate respawns at its home on both clients', () => {
+  for (const c of [A, B]) { const b = c.crates[1]; assert.ok(!b.parked && Math.hypot(b.pos.x - 2, b.pos.z) < 0.05, `${c.id} at ${b.pos.x},${b.pos.z}`); }
 });
 
 console.log(`${passed} passed`);

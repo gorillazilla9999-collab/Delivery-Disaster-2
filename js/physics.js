@@ -18,6 +18,7 @@ const REST_THRESHOLD = 1.2;     // m/s: slower impacts do not bounce
 const SLEEP_V2 = 0.05 * 0.05, SLEEP_W2 = 0.12 * 0.12, SLEEP_TIME = 0.55;
 const SOLVER_ITERATIONS = 12;
 const PRISM_SIDES = 24;
+export const PARK_Y = -49;       // where parked bodies live (the network treats y < -48 as "parked")
 
 // ---------- tiny vector helpers (plain [x,y,z] arrays) ----------
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -198,6 +199,7 @@ export class Body {
     this.ignore = null;       // a body this one passes through (the carrier)
     this.rayIgnore = false;   // raycasts skip this body (carried crate)
     this.sleeping = false; this.sleepT = 0;
+    this.parked = false;      // out of play (hidden, no collisions): spawn-pool items and crushed crates
     this.world = null;
     this.mesh = null;
     this.updateBounds();
@@ -228,7 +230,14 @@ export class Body {
   // true when it is a flat-topped, upright block (safe to walk up onto)
   get flatTop() { return this.kind === 'box' && this.R[4] > 0.9995; }
 
-  wake() { if (this.world) this.world.wakeBody(this); else { this.sleeping = false; this.sleepT = 0; } }
+  // take out of play / put back. A parked body sits far below the world and is ignored by everything.
+  park() {
+    this.parked = true; this.sleeping = true; this.kinematic = false; this.noGravity = false; this.ignore = null; this.rayIgnore = true;
+    this.vel.set(0, 0, 0); this.angVel.set(0, 0, 0); this.pos.set(0, PARK_Y, 0); this.quat.set(0, 0, 0, 1);
+    this.updateBounds();
+  }
+  unpark() { if (!this.parked) return; this.parked = false; this.sleeping = false; this.sleepT = 0; this.rayIgnore = false; }
+  wake() { if (this.parked) return; if (this.world) this.world.wakeBody(this); else { this.sleeping = false; this.sleepT = 0; } }
   setQuat(x, y, z, w) { this.quat.set(x, y, z, w).normalize(); this.updateBounds(); }
   get speed() { return Math.hypot(this.vel.x, this.vel.y, this.vel.z); }
   get spin() { return Math.hypot(this.angVel.x, this.angVel.y, this.angVel.z); }
@@ -440,7 +449,7 @@ export class PhysicsWorld {
       const x = stack.pop();
       x.sleeping = false; x.sleepT = 0;
       for (const o of this.dynamics) {              // anything resting on / next to it wakes too
-        if (!o.sleeping || o === x) continue;
+        if (!o.sleeping || o === x || o.parked) continue;
         if (o.min.x < x.max.x + 0.05 && o.max.x > x.min.x - 0.05 && o.min.y < x.max.y + 0.05 && o.max.y > x.min.y - 0.05 &&
             o.min.z < x.max.z + 0.05 && o.max.z > x.min.z - 0.05) stack.push(o);
       }
@@ -454,7 +463,7 @@ export class PhysicsWorld {
 
     // 1. forces: gravity + drag on every moving body; walking bodies climb small ledges
     for (const b of dyn) {
-      if (b.kinematic || b.sleeping) continue;
+      if (b.kinematic || b.sleeping || b.parked) continue;
       if (!b.noGravity) b.vel.y = Math.max(b.vel.y - g * h, -tv);
       if (!b.isPlayer && !b.noGravity) {
         const kl = 1 / (1 + b.linDamp * h), ka = 1 / (1 + b.angDamp * h);
@@ -526,7 +535,7 @@ export class PhysicsWorld {
     const nminx = b.min.x + dx, nmaxx = b.max.x + dx, nminz = b.min.z + dz, nmaxz = b.max.z + dz;
     let best = 0, top = null;
     for (const c of this.all) {
-      if (c === b || passes(b, c) || !c.flatTop && !(c.kind === 'box' && !c.dynamic)) continue;
+      if (c === b || c.parked || passes(b, c) || !c.flatTop && !(c.kind === 'box' && !c.dynamic)) continue;
       const rise = c.max.y - b.min.y;
       const limit = c.dynamic ? 0.3 : b.stepHeight;                 // loose crates are shoved, not climbed (unless small)
       if (rise <= 0.01 || rise > limit || rise <= best) continue;
@@ -556,6 +565,7 @@ export class PhysicsWorld {
       for (let j = i + 1; j < all.length; j++) {
         const B = all[j];
         if (!A.dynamic && !B.dynamic) continue;
+        if (A.parked || B.parked) continue;
         const aAct = A.dynamic && !A.kinematic && !A.sleeping, bAct = B.dynamic && !B.kinematic && !B.sleeping;
         const aMov = A.kinematic && A.vel.length() > 0.02, bMov = B.kinematic && B.vel.length() > 0.02;
         if (!aAct && !bAct && !(aMov && B.sleeping) && !(bMov && A.sleeping)) continue;
@@ -728,7 +738,7 @@ export class PhysicsWorld {
   raycast(origin, dir, maxDist, ignore = null) {
     let best = null;
     for (const c of this.all) {
-      if (c === ignore || c.rayIgnore) continue;
+      if (c === ignore || c.rayIgnore || c.parked) continue;
       const t = rayBody(c, origin, dir, maxDist);
       if (t !== null && (!best || t < best.dist)) best = { body: c, dist: t };
     }
@@ -741,7 +751,7 @@ export class PhysicsWorld {
 
   // Apply an impulse (N*s) along `dir` (unit) at a world point (defaults to the centre of mass).
   applyImpulse(body, dir, magnitude, point = null) {
-    if (!body || !body.dynamic || body.kinematic) return;
+    if (!body || !body.dynamic || body.kinematic || body.parked) return;
     body.wake();
     const jx = dir.x * magnitude, jy = dir.y * magnitude, jz = dir.z * magnitude;
     body.vel.x += jx * body.invMass; body.vel.y += jy * body.invMass; body.vel.z += jz * body.invMass;

@@ -206,7 +206,7 @@ class RoomManager {
       const ownedByOther = c.owner && c.owner !== id && room.players.has(c.owner) && now - c.at <= OWNER_TIMEOUT;
       if (ownedByOther) continue;
       c.s = [
-        clampNum(e[1], -WORLD_LIMIT, WORLD_LIMIT), clampNum(e[2], -5, 100), clampNum(e[3], -WORLD_LIMIT, WORLD_LIMIT),
+        clampNum(e[1], -WORLD_LIMIT, WORLD_LIMIT), clampNum(e[2], -60, 100), clampNum(e[3], -WORLD_LIMIT, WORLD_LIMIT),   // y=-49 means "parked" (spawn pool / crushed)
         clampNum(e[4], -60, 60), clampNum(e[5], -60, 60), clampNum(e[6], -60, 60),
       ];
       if (e.length >= 12) {                                    // orientation (unit quaternion) + angular velocity

@@ -142,3 +142,9 @@ body.menu-open #chat { opacity: 0; }
 #chat-input { pointer-events: auto; width: 100%; padding: 8px 10px; font: inherit; font-size: 15px; color: #fff; background: rgba(0,0,0,.72);
   border: 2px solid #ffd23f; border-radius: 8px; outline: none; }
 #chat-input::placeholder { color: rgba(255,255,255,.55); }
+
+#spawner { position: fixed; right: 12px; bottom: 10px; padding: 6px 10px; font-size: 12px; color: #fff;
+  background: rgba(0,0,0,.45); border-radius: 6px; border-left: 3px solid #ffd23f; pointer-events: none; }
+#spawner b { color: #ffd23f; letter-spacing: .08em; }
+#spawner i { color: #cfd6dd; font-style: normal; margin-left: 6px; }
+body.menu-open #spawner { opacity: 0; }

@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { Body } from './physics.js';
 import { CONFIG } from './config.js';
+import { Crusher } from './crusher.js';
 
 const SUN_DIR = new THREE.Vector3(0.45, 0.8, 0.35).normalize();
 const HORIZON = 0xcfe6fa;
@@ -235,15 +236,53 @@ export function buildWorld({ scene, physics, renderer }) {
   // scattered about
   barrel(-5, 0, 1, 'blue'); barrel(0, 0, 4, 'red'); barrel(-8, 0, -5, 'red'); barrel(4, 0, -4, 'blue');
 
+  // --- spawn pool: parked crates/barrels that the spawn tool brings into play (same indices on every client) ---
+  const pool = {};
+  for (const t of CONFIG.spawner.types) {
+    pool[t.id] = [];
+    for (let i = 0; i < CONFIG.spawner.perType; i++) {
+      const b = t.kind === 'crate' ? crate(t.size, 0, 0, 0) : barrel(0, 0, 0, t.color);
+      b.home = [0, -49, 0]; b.pool = t.id; b.park();
+      pool[t.id].push(b);
+    }
+  }
+
+  // --- the crusher + the flat remains of whatever it crushes ---
+  const crusher = new Crusher({ scene, physics, x: CONFIG.crusher.x, z: CONFIG.crusher.z });
+  const pancakes = [];
+  function pancake(last, b) {            // `last` = [x, z, qx, qy, qz, qw] where the crate was before it vanished
+    const m = b.mesh.clone();
+    m.material = Array.isArray(b.mesh.material) ? b.mesh.material.map((x) => x.clone()) : b.mesh.material.clone();
+    const [x, z, qx, qy, qz, qw] = last, yaw = Math.atan2(2 * (qw * qy + qx * qz), 1 - 2 * (qy * qy + qz * qz));
+    m.rotation.set(0, yaw, 0);
+    m.scale.set(1.18, 0.08 / b.h, 1.18);
+    m.position.set(x, 0.045, z);
+    m.visible = true;
+    scene.add(m);
+    pancakes.push({ m, age: 0 });
+  }
+
   let highlighted = null;
   const hlColor = new THREE.Color(0x3a2a00), flashColor = new THREE.Color(0x8a6414);
 
   return {
-    crates,
+    crates, pool, crusher,
     setHighlight(body) { highlighted = body; },
     flash(body) { if (body && body.mesh) body.flash = 0.22; },
     update(dt, playerPos, camera, time) {
+      for (let i = pancakes.length - 1; i >= 0; i--) {          // flattened crates fade out after a while
+        const p = pancakes[i]; p.age += dt;
+        if (p.age > 12) { p.m.scale.y *= 0.9; p.m.position.y -= dt * 0.02; }
+        if (p.age > 14) { scene.remove(p.m); pancakes.splice(i, 1); }
+      }
       for (const b of crates) {
+        if (b.parked) {
+          if (b.mesh.visible && b._last && crusher.y < 1.5 && crusher.covers(b._last[0], b._last[1], 0.3)) pancake(b._last, b);   // squashed
+          b.mesh.visible = false;
+          continue;
+        }
+        b.mesh.visible = true;
+        b._last = [b.pos.x, b.pos.z, b.quat.x, b.quat.y, b.quat.z, b.quat.w];
         b.mesh.position.set(b.pos.x, b.pos.y, b.pos.z);
         b.mesh.quaternion.set(b.quat.x, b.quat.y, b.quat.z, b.quat.w);
         b.flash = Math.max(0, b.flash - dt);

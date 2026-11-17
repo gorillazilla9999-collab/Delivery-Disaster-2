@@ -46,6 +46,18 @@ export const CONFIG = {
   // kg. You can lift anything; heavy loads just slow you down (see player.carrySlow). Throws: speed = throwPower / sqrt(kg) (a 10 kg crate flies ~8 m/s).
   carry: { holdGap: 0.95, holdDrop: 0.35, gain: 14, massLag: 0.04, maxSpeed: 14, breakDist: 2.2, throwPower: 26, maxThrow: 14 },
 
+  // The hydraulic press (heights in metres, times in seconds; everything is derived from synced time).
+  crusher: { x: -11, z: 12, size: 3, thick: 0.6, cycle: 9, top: 3.2, bottom: 0.02, waitTop: 4.5, slam: 0.55, hold: 1.2, warn: 1.6, headY: 4.2, crushBelow: 0.9, respawn: 10 },
+
+  // The spawn tool: Q cycles the item, F spawns it where you look, X removes the item you look at.
+  spawner: { perType: 6, types: [
+    { id: 'crate-s', label: 'Small crate (0.5 m)', kind: 'crate', size: 0.5 },
+    { id: 'crate-m', label: 'Crate (0.8 m)', kind: 'crate', size: 0.8 },
+    { id: 'crate-l', label: 'Big crate (1.2 m)', kind: 'crate', size: 1.2 },
+    { id: 'barrel-r', label: 'Red barrel', kind: 'barrel', color: 'red' },
+    { id: 'barrel-b', label: 'Blue barrel', kind: 'barrel', color: 'blue' },
+  ] },
+
   // Materials. friction = Coulomb coefficient, restitution = bounciness. Pairs combine as sqrt(a*b) and max(a,b).
   materials: {
     ground: { friction: 0.9, restitution: 0.1 },

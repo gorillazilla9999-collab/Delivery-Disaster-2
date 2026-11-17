@@ -14,6 +14,7 @@ import { MultiplayerUI } from './multiplayer-ui.js';
 import { CrateSync } from './crates-sync.js';
 import { Chat } from './chat.js';
 import { Combat } from './combat.js';
+import { isDanger } from './crusher.js';
 
 async function main() {
   const ui = new UI();
@@ -111,6 +112,33 @@ async function main() {
     b.vel.set(vx, vy, vz);
     physics.driveOrientation(b, holdQuat.setYaw(player.yaw), 10, 12);
     return Math.hypot(tx - b.pos.x, ty - b.pos.y, tz - b.pos.z);
+  };
+
+  // --- spawn tool (Q cycle, F spawn, X remove) ---
+  const spawnTypes = CONFIG.spawner.types;
+  let spawnSel = 0;
+  const spawnEl = document.getElementById('spawner-item');
+  const showSpawnSel = () => { if (spawnEl) spawnEl.textContent = spawnTypes[spawnSel].label; };
+  showSpawnSel();
+  const respawns = [];                                           // crushed / removed map crates that come back at their home
+  const spawnItem = () => {
+    const t = spawnTypes[spawnSel];
+    const free = world.pool[t.id].filter((b) => b.parked);
+    if (!free.length) { mpUI.toast(`Out of ${t.label.toLowerCase()}s - remove (X) or crush some`, 'info'); return; }
+    const b = free[Math.floor(Math.random() * free.length)];
+    const a = player.aimDir, e = player.eyePos;
+    const hit = physics.raycast(e, a, 4, player.body);
+    const d = Math.max(1.5, Math.min(3.2, hit ? hit.dist - b.hx - 0.3 : 3.2));
+    const x = e.x + a.x * d, z = e.z + a.z * d, y = Math.max(e.y + a.y * d, b.h / 2 + 0.05);
+    const v = { x: player.body.vel.x + a.x * 2, y: player.body.vel.y + a.y * 2, z: player.body.vel.z + a.z * 2 };
+    crateSync.spawn(b, x, y, z, v, holdQuat.setYaw(player.yaw));
+    world.flash(b);
+  };
+  const removeItem = (b) => {
+    if (crateSync.isRemoteOwned(b)) { mpUI.toast('Somebody else is moving that one', 'info'); return; }
+    if (b === held) dropCrate();
+    crateSync.park(b);
+    if (!b.pool) respawns.push({ b, at: performance.now() + CONFIG.crusher.respawn * 1000 });
   };
 
   // --- hand interaction ---
@@ -237,6 +265,14 @@ async function main() {
     if (down && held) dropCrate();
     if (down) { for (const k of ['KeyE', 'Mouse0', 'Mouse2']) input._pressed.delete(k); }
     if (input.pressed('KeyE')) { if (held) dropCrate(); else pickUp(); }
+    if (!down) {
+      if (input.pressed('KeyQ')) { spawnSel = (spawnSel + 1) % spawnTypes.length; showSpawnSel(); }
+      if (input.pressed('KeyF')) spawnItem();
+      if (input.pressed('KeyX')) {
+        const r = physics.raycast(player.eyePos, player.aimDir, CONFIG.interaction.rayLength + 1, player.body);
+        if (r && r.body && r.body.dynamic && world.crates.includes(r.body)) removeItem(r.body);
+      }
+    }
     if (held && crateSync.isRemoteOwned(held)) dropCrate();      // somebody else won the claim
     if (held && (input.pressed('Mouse0') || input.pressed('Mouse2'))) {
       dropCrate(true);                                           // click while carrying = throw
@@ -247,6 +283,15 @@ async function main() {
     }
     hands.setReaching(!!held || (!down && input.down('KeyE')));
     hands.setGrip('left', held ? 1 : 0); hands.setGrip('right', held ? 1 : 0);
+
+    // the crusher runs on synced time, so every player sees the same press; anybody caught under it is flung clear
+    const tSync = net.serverNowSec(), crusher = world.crusher, pb = player.body;
+    crusher.update(tSync, dt, now / 1000);
+    if (isDanger(tSync) && crusher.covers(pb.pos.x, pb.pos.z, 0.3) && crusher.y < pb.pos.y + CONFIG.player.height + 0.4) {
+      const dx = pb.pos.x - crusher.x, dz = pb.pos.z - crusher.z, l = Math.hypot(dx, dz) || 1;
+      player.knock(dx / l, dz / l, 13, 3.5);
+      if (now - (crusher.lastWarn || 0) > 3000) { crusher.lastWarn = now; mpUI.toast('The crusher flung you out!', 'info'); }
+    }
 
     // physics in small substeps for stable collisions
     crateSync.beforePhysics(dt);
@@ -260,6 +305,15 @@ async function main() {
       player.afterStep();
     }
     crateSync.afterPhysics(dt);
+    for (const b of crusher.crushed(world.crates)) {                 // pinned under the press: flattened (the owner / host decides)
+      if (!crateSync.isAuthority(b)) continue;
+      if (b === held) dropCrate();
+      crateSync.park(b);
+      if (!b.pool) respawns.push({ b, at: now + CONFIG.crusher.respawn * 1000 });
+    }
+    for (let i = respawns.length - 1; i >= 0; i--) {
+      if (now >= respawns[i].at) { const { b } = respawns.splice(i, 1)[0]; if (b.parked) crateSync.restore(b, b.home[0], b.home[1], b.home[2]); }
+    }
 
     // view
     const view = player.updateView(dt);

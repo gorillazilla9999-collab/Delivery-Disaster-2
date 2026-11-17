@@ -110,3 +110,14 @@ so a 130 kg crate barely budges while a 10 kg one flies. You can lift anything, 
 thrown speed falls with weight; punches hit at the point you aim at, so off-centre hits spin crates.
 Crate orientation and spin are synced between players. Tune everything in `js/config.js` (`physics`, `player`, `carry`,
 `materials`, `interaction`). Tests: `npm test` (`npm run test:physics`, `npm run test:sync` run headless in Node).
+
+## Crusher and spawn tool
+
+- **Crusher** (`js/crusher.js`, tuned in `CONFIG.crusher`): a hydraulic press at (-11, 12). Its position is a function of synced
+  time, so every player sees it in the same place with no network traffic. It is a kinematic body (it really shoves things).
+  Crates and barrels still under it when it bottoms out are flattened; map crates come back at their home after 10 s, spawned
+  items free up their slot. You get flung clear if you stand under it when it slams. The room host (or the crate's owner) decides
+  what was crushed.
+- **Spawn tool** (`CONFIG.spawner`): **Q** cycles the item (small / normal / big crate, red / blue barrel), **F** spawns it where you
+  look, **X** removes the crate or barrel you look at. Spawned items come from a pre-built pool (6 per type) that exists
+  parked on every client, so spawning needs no new network messages: it is just a crate that starts moving.
