@@ -1,6 +1,7 @@
 // Test environment: sky, lights, ground, static obstacles and pushable crates + barrels.
 import * as THREE from 'three';
 import { Body } from './physics.js';
+import { CONFIG } from './config.js';
 
 const SUN_DIR = new THREE.Vector3(0.45, 0.8, 0.35).normalize();
 const HORIZON = 0xcfe6fa;
@@ -108,11 +109,14 @@ export function buildWorld({ scene, physics, renderer }) {
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
+  // The ground the physics sees: a thick static slab whose top is y = 0 (rays use the exact plane instead).
+  const slab = physics.add(new Body({ size: [800, 10, 800], position: [0, -10, 0], name: 'ground', ...CONFIG.materials.ground }));
+  slab.rayIgnore = true;
 
   // --- static obstacles ---
   const statics = [];
   function block(size, x, z, color, name) {
-    const body = physics.add(new Body({ size, position: [x, 0, z], name }));
+    const body = physics.add(new Body({ size, position: [x, 0, z], name, ...CONFIG.materials.wall }));
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(...size),
       new THREE.MeshStandardMaterial({ color, roughness: 0.85 }),
@@ -150,15 +154,21 @@ export function buildWorld({ scene, physics, renderer }) {
   const crateMat = new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.9 });
 
   const crates = [];
+  const MAT = CONFIG.materials;
+  // Crates are real rigid bodies: `y` is where the BOTTOM sits, the body is centred (so it can tumble about its middle).
   function crate(size, x, y, z) {
-    const mass = Math.max(0.3, 1.4 * size ** 3);
-    const body = physics.add(new Body({ size: [size, size, size], position: [x, y, z], mass, dynamic: true, name: 'crate' }));
+    const mass = MAT.crate.density * size ** 3;                          // kg
+    const cy = y + size / 2 + 0.001;
+    const body = physics.add(new Body({
+      size: [size, size, size], position: [x, cy, z], mass, dynamic: true, baseOrigin: false, name: 'crate',
+      friction: MAT.crate.friction, restitution: MAT.crate.restitution,
+    }));
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), crateMat.clone());
     mesh.castShadow = mesh.receiveShadow = true;
     scene.add(mesh);
     body.mesh = mesh;
     body.flash = 0;
-    body.home = [x, y, z];
+    body.home = [x, cy, z];
     crates.push(body);
     return body;
   }
@@ -172,9 +182,9 @@ export function buildWorld({ scene, physics, renderer }) {
   crate(0.5, 0, 0, 0); crate(0.7, 2, 0, -5); crate(0.9, -2, 0, 7);
 
   // --- pushable barrels ---
-  // Barrels are crates as far as physics, carrying and network sync go (they are appended to the same `crates`
-  // list, so every client gets the same index for each one). Collision is the usual AABB, so the cylinder is
-  // sized to fill its box: 0.6 m wide, 0.9 m tall.
+  // Barrels are crates as far as carrying and network sync go (they are appended to the same `crates` list, so
+  // every client gets the same index for each one). Physically they are true cylinders (0.6 m wide, 0.9 m tall):
+  // they stand, tip over, roll along their side and bounce more than wooden crates do.
   const barrelBody = (g, s, base, band) => {
     g.fillStyle = base; g.fillRect(0, 0, s, s);
     const shade = g.createLinearGradient(0, 0, s, 0);                   // soft shading around the barrel
@@ -205,14 +215,18 @@ export function buildWorld({ scene, physics, renderer }) {
   };
   const BARREL_W = 0.6, BARREL_H = 0.9;
   function barrel(x, y, z, color = 'red') {
-    const body = physics.add(new Body({ size: [BARREL_W, BARREL_H, BARREL_W], position: [x, y, z], mass: 1.6, dynamic: true, name: 'barrel' }));
+    const cy = y + BARREL_H / 2 + 0.001;
+    const body = physics.add(new Body({
+      shape: 'cyl', radius: BARREL_W / 2, height: BARREL_H, position: [x, cy, z], mass: MAT.barrel.mass, dynamic: true, baseOrigin: false,
+      name: 'barrel', friction: MAT.barrel.friction, restitution: MAT.barrel.restitution,
+    }));
     const geo = new THREE.CylinderGeometry(BARREL_W / 2, BARREL_W / 2, BARREL_H, 28);
     const mesh = new THREE.Mesh(geo, [barrelSides[color].clone(), barrelCap.clone(), barrelCap.clone()]);   // side, top, bottom
     mesh.castShadow = mesh.receiveShadow = true;
     scene.add(mesh);
     body.mesh = mesh;
     body.flash = 0;
-    body.home = [x, y, z];
+    body.home = [x, cy, z];
     crates.push(body);
     return body;
   }
@@ -230,7 +244,8 @@ export function buildWorld({ scene, physics, renderer }) {
     flash(body) { if (body && body.mesh) body.flash = 0.22; },
     update(dt, playerPos, camera, time) {
       for (const b of crates) {
-        b.mesh.position.set(b.pos.x, b.pos.y + b.h / 2, b.pos.z);
+        b.mesh.position.set(b.pos.x, b.pos.y, b.pos.z);
+        b.mesh.quaternion.set(b.quat.x, b.quat.y, b.quat.z, b.quat.w);
         b.flash = Math.max(0, b.flash - dt);
         const mats = Array.isArray(b.mesh.material) ? b.mesh.material : [b.mesh.material];   // barrels have several
         for (const m of mats) {

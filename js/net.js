@@ -313,7 +313,7 @@ export class Net {
   }
 
   sendCrates(entries) { if (this.room && this.socket && this.socket.connected) this.socket.emit('crates', entries); }
-  sendCrateImpulse(idx, d, m) { if (this.room && this.socket && this.socket.connected) this.socket.emit('crate-impulse', { idx, d, m }); }
+  sendCrateImpulse(idx, d, m, p) { if (this.room && this.socket && this.socket.connected) this.socket.emit('crate-impulse', { idx, d, m, p }); }
 
   sendPunch(targetId) {
     if (this.room && this.socket && this.socket.connected) this.socket.emit('punch', { to: targetId });

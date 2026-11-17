@@ -250,7 +250,9 @@ io.on('connection', (socket) => {
     const owner = rooms.crateOwner(room, idx);
     if (!owner || owner === socket.id) return;
     const v = d.d.slice(0, 3).map((n) => (Number.isFinite(+n) ? Math.max(-1, Math.min(1, +n)) : 0));
-    io.to(owner).emit('crate-impulse', { idx, d: v, m: Math.max(0, Math.min(10, Number(d.m) || 0)) });
+    // optional world-space point of impact (so off-centre hits spin the crate)
+    const p = Array.isArray(d.p) && d.p.length >= 3 ? d.p.slice(0, 3).map((n) => (Number.isFinite(+n) ? Math.max(-200, Math.min(200, +n)) : 0)) : undefined;
+    io.to(owner).emit('crate-impulse', { idx, d: v, m: Math.max(0, Math.min(150, Number(d.m) || 0)), p });
   });
 
   socket.on('ping-check', (ack) => { if (typeof ack === 'function') ack(Date.now()); });

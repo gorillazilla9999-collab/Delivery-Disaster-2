@@ -70,6 +70,14 @@ console.log('All room tests passed.');
   assert.strictEqual(m.crateUpdate('A', [[2, 1, 0, 1, 0, 0, 0, 0]], t + 3005).length, 0, 'rate limited');
   m.crateUpdate('A', [[2, 1, 0, 1, 0, 0, 0, 0]], t + 3100);
   const init = m.crateInit(a.room); assert.ok(init.length >= 2 && init.find((e) => e[0] === 2)[7] === 'A', 'late-joiner init carries owners');
+  // orientation + spin ride along with the state (and are normalised / clamped by the server)
+  const rotAcc = m.crateUpdate('A', [[2, 1, 0, 1, 0, 0, 0, 0, 0, 0, 2, 2, 0.5, 100, 0]], t + 3200);
+  assert.strictEqual(rotAcc.length, 1, 'rotation entry accepted');
+  const qa = rotAcc[0].slice(8, 12), ql = Math.hypot(...qa);
+  assert.ok(Math.abs(ql - 1) < 1e-9 && rotAcc[0].length === 15, 'quaternion normalised, 15 numbers relayed');
+  assert.strictEqual(rotAcc[0][13], 40, 'spin clamped');
+  const init2 = m.crateInit(a.room).find((e) => e[0] === 2);
+  assert.ok(init2.length === 15 && init2[7] === 'A', 'late joiners get the orientation too');
   const l = m.leave('A'); assert.ok(l.releasedCrates.includes(2) && l.releasedCrates.includes(3), 'leaving releases owned crates');
   assert.strictEqual(m.crateOwner(a.room, 2), null);
   // other room has its own crates

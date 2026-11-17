@@ -189,7 +189,8 @@ class RoomManager {
   }
 
   // ---- shared objects (crates): per-crate ownership. The owner simulates and streams; others follow. ----
-  // entry: [idx, x, y, z, vx, vy, vz, release(0|1)].  Returns the accepted entries (to relay to the room).
+  // entry: [idx, x, y, z, vx, vy, vz, release(0|1), qx, qy, qz, qw, wx, wy, wz]  (orientation + spin are optional,
+  // older clients send only the first 8 numbers).  Returns the accepted entries (to relay to the room).
   crateUpdate(id, entries, now = Date.now()) {
     const room = this.roomOf(id);
     const p = room && room.players.get(id);
@@ -208,11 +209,17 @@ class RoomManager {
         clampNum(e[1], -WORLD_LIMIT, WORLD_LIMIT), clampNum(e[2], -5, 100), clampNum(e[3], -WORLD_LIMIT, WORLD_LIMIT),
         clampNum(e[4], -60, 60), clampNum(e[5], -60, 60), clampNum(e[6], -60, 60),
       ];
+      if (e.length >= 12) {                                    // orientation (unit quaternion) + angular velocity
+        let q = [clampNum(e[8], -1, 1), clampNum(e[9], -1, 1), clampNum(e[10], -1, 1), clampNum(e[11], -1, 1)];
+        const l = Math.hypot(...q);
+        q = l > 1e-6 ? q.map((v) => v / l) : [0, 0, 0, 1];
+        c.q = [...q, clampNum(e[12], -40, 40), clampNum(e[13], -40, 40), clampNum(e[14], -40, 40)];
+      }
       c.at = now;
       const rel = e[7] === 1;
       c.owner = rel ? null : id;
       room.crates.set(idx, c);
-      accepted.push([idx, ...c.s, rel ? 1 : 0]);
+      accepted.push(c.q ? [idx, ...c.s, rel ? 1 : 0, ...c.q] : [idx, ...c.s, rel ? 1 : 0]);
     }
     return accepted;
   }
@@ -226,10 +233,10 @@ class RoomManager {
 
   crateOwner(room, idx) { const c = room.crates.get(idx); return c ? c.owner : null; }
 
-  // everything a late joiner needs: [idx, x,y,z, vx,vy,vz, ownerId|null]
+  // everything a late joiner needs: [idx, x,y,z, vx,vy,vz, ownerId|null, qx,qy,qz,qw, wx,wy,wz]
   crateInit(room) {
     const out = [];
-    for (const [idx, c] of room.crates) if (c.s) out.push([idx, ...c.s, c.owner]);
+    for (const [idx, c] of room.crates) if (c.s) out.push(c.q ? [idx, ...c.s, c.owner, ...c.q] : [idx, ...c.s, c.owner]);
     return out;
   }
 

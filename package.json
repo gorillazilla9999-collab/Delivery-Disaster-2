@@ -8,7 +8,9 @@
   "scripts": {
     "start": "node server/server.js",
     "dev": "node --watch server/server.js",
-    "test": "node server/test-rooms.js"
+    "test": "node server/test-rooms.js && node test/physics.test.mjs && node test/sync.test.mjs",
+    "test:sync": "node test/sync.test.mjs",
+    "test:physics": "node test/physics.test.mjs"
   },
   "engines": { "node": ">=18" },
   "dependencies": {

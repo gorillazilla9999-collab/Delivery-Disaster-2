@@ -80,7 +80,7 @@ js/input.js         keyboard / mouse / pointer lock
 js/character.js     loads person.glb, finds the 6 parts, scales to 1.8 m, feet animation
 js/hands.js         first-person hands rig (bob, lag, poke, reach, grip hooks)
 js/player.js        movement, camera, head bob, landing dip, character sync
-js/physics.js       AABB physics: gravity, ground, step-up, pushable boxes, raycast
+js/physics.js       rigid-body physics: rotating boxes + cylinders, friction, bounce, stacking, sleeping, step-up, raycast
 js/world.js         sky, lights, ground, obstacles, crates
 js/ui.js            overlay / crosshair
 ```
@@ -100,3 +100,13 @@ If names change, a geometry-based fallback is used. In the console: `DD.characte
   `hands.onImpact(side)` — grabbing/carrying will build on these.
 - `physics.add(new Body({...}))` — vehicles/packages can be more bodies; `physics.raycast()` for interaction.
 - `player.body`, `player.eyePos`, `player.aimDir` — position/aim state for networking later.
+
+
+## Physics (realistic rigid bodies)
+
+Units are metres / seconds / kilograms. Crates and barrels tumble, tip, topple, slide with Coulomb friction, bounce and
+stack; barrels are real cylinders that roll. Gravity is 9.81 m/s2, the player weighs 75 kg and can only push with ~1000 N,
+so a 130 kg crate barely budges while a 10 kg one flies. Things over 40 kg cannot be lifted; carrying slows you down;
+thrown speed falls with weight; punches hit at the point you aim at, so off-centre hits spin crates.
+Crate orientation and spin are synced between players. Tune everything in `js/config.js` (`physics`, `player`, `carry`,
+`materials`, `interaction`). Tests: `npm test` (`npm run test:physics`, `npm run test:sync` run headless in Node).

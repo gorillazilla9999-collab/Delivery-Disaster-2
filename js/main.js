@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
 import { Input } from './input.js';
-import { PhysicsWorld } from './physics.js';
+import { PhysicsWorld, Quat } from './physics.js';
 import { buildWorld } from './world.js';
 import { Character } from './character.js';
 import { FirstPersonHands } from './hands.js';
@@ -66,14 +66,22 @@ async function main() {
     if (!held) return;
     const b = held;
     held = null;
+    player.carryMass = 0;
     b.noGravity = false; b.ignore = null; b.rayIgnore = false;
     crateSync.unhold(b);
-    b.vel.set(0, 0, 0);
+    b.wake();
+    b.angVel.set(0, 0, 0);
     if (throwIt) {
-      const t = CONFIG.carry.throwSpeed / Math.max(1, Math.sqrt(b.mass));
-      b.vel.set(player.aimDir.x * t + player.body.vel.x, player.aimDir.y * t + 1.5, player.aimDir.z * t + player.body.vel.z);
+      // an arm delivers a roughly fixed amount of energy: light things fly fast, heavy things barely leave the hands
+      const C = CONFIG.carry;
+      const t = Math.min(C.maxThrow, C.throwPower / Math.sqrt(Math.max(1, b.mass)));
+      b.vel.set(player.aimDir.x * t + player.body.vel.x, player.aimDir.y * t + 1.2 + player.body.vel.y, player.aimDir.z * t + player.body.vel.z);
+      // released a little off-centre, so it tumbles: spin about the axis across the throw direction
+      const sp = t / (b.h + 0.4) * 0.8;
+      b.angVel.set(-player.aimDir.z * sp + (Math.random() - 0.5), (Math.random() - 0.5) * 2, player.aimDir.x * sp + (Math.random() - 0.5));
     } else {
       b.vel.x = player.body.vel.x * 0.5; b.vel.z = player.body.vel.z * 0.5;
+      b.vel.y = 0;
     }
   };
   const pickUp = () => {
@@ -81,23 +89,28 @@ async function main() {
     const b = hit && hit.body;
     if (!b || !b.dynamic || b.isPlayer || crateSync.indexOf(b) < 0) return;
     if (crateSync.isRemoteOwned(b)) { mpUI.toast('Somebody else is moving that crate', 'info'); return; }
-    if (b.mass > CONFIG.carry.maxMass) return;
+    if (b.mass > CONFIG.carry.maxMass) { mpUI.toast(`Too heavy to lift (${Math.round(b.mass)} kg) - push it`, 'info'); return; }
     held = b;
+    player.carryMass = b.mass;
+    b.wake();
     b.noGravity = true; b.ignore = player.body; b.rayIgnore = true; b.onGround = false;
     crateSync.hold(b);
   };
-  // drive the carried crate toward a spot in front of the camera (runs every physics substep)
+  // drive the carried crate toward a spot in front of the camera (runs every physics substep). Heavier loads lag more,
+  // and the crate is turned upright and to face the way you look.
+  const holdQuat = new Quat();
   const driveHeld = () => {
     const c = CONFIG.carry, b = held;
     const d = c.holdGap + b.hx;
     const tx = player.eyePos.x + player.aimDir.x * d;
-    const ty = player.eyePos.y + player.aimDir.y * d - c.holdDrop - b.h / 2;
+    const ty = player.eyePos.y + player.aimDir.y * d - c.holdDrop;          // centre of the crate
     const tz = player.eyePos.z + player.aimDir.z * d;
-    const k = c.gain / (1 + 0.25 * b.mass);
+    const k = c.gain / (1 + c.massLag * b.mass);
     let vx = (tx - b.pos.x) * k, vy = (ty - b.pos.y) * k, vz = (tz - b.pos.z) * k;
     const sp = Math.hypot(vx, vy, vz);
     if (sp > c.maxSpeed) { const f = c.maxSpeed / sp; vx *= f; vy *= f; vz *= f; }
     b.vel.set(vx, vy, vz);
+    physics.driveOrientation(b, holdQuat.setYaw(player.yaw), 10, 12);
     return Math.hypot(tx - b.pos.x, ty - b.pos.y, tz - b.pos.z);
   };
 
@@ -106,7 +119,9 @@ async function main() {
     if (combat.tryPunch()) return;                        // punched another player
     const hit = physics.raycast(player.eyePos, player.aimDir, CONFIG.interaction.reach, player.body);
     if (hit && hit.body && hit.body.dynamic) {
-      crateSync.poke(hit.body, player.aimDir, CONFIG.interaction.pokeImpulse);
+      const e = player.eyePos, a = player.aimDir;
+      const point = { x: e.x + a.x * hit.dist, y: e.y + a.y * hit.dist, z: e.z + a.z * hit.dist };   // where the fist lands: off-centre hits spin the crate
+      crateSync.poke(hit.body, a, CONFIG.interaction.pokeImpulse, point);
       world.flash(hit.body);
     }
   };
@@ -235,7 +250,7 @@ async function main() {
     hands.setGrip('left', held ? 1 : 0); hands.setGrip('right', held ? 1 : 0);
 
     // physics in small substeps for stable collisions
-    crateSync.beforePhysics();
+    crateSync.beforePhysics(dt);
     player.beginFrame(dt);
     const n = Math.max(1, Math.ceil(dt / CONFIG.physics.maxSubstep));
     const h = dt / n;

@@ -19,6 +19,7 @@ export class Player {
     this.body = new Body({
       size: [P.radius * 2, P.height, P.radius * 2],
       position: P.spawn, mass: P.mass, dynamic: true, name: 'player',
+      baseOrigin: true, lockRotation: true, friction: 0, restitution: 0,   // legs set the ground speed, so no contact friction
     });
     this.body.isPlayer = true;
     this.body.stepHeight = P.stepHeight;
@@ -32,6 +33,7 @@ export class Player {
     this.dip = 0; this.dipVel = 0; this.roll = 0;
     this.fov = CONFIG.camera.fov;
     this.thirdPerson = false;
+    this.carryMass = 0;                    // kg held in the hands: slows walking and jumping
     this.ko = false; this.koAmt = 0;       // knocked out: no control, camera lies on the ground
     this.knockT = 0;                       // brief loss of control after being punched
     this.bodyYaw = new BodyYaw(0);          // camera-independent body facing
@@ -77,11 +79,13 @@ export class Player {
       const run = inp.down('ShiftLeft') || inp.down('ShiftRight');
       let speed = run ? P.runSpeed : P.walkSpeed;
       if (f < 0) speed *= P.backwardFactor;
+      speed /= 1 + P.carrySlow * this.carryMass;                       // a heavy load slows you down
       tvx = (wx / len) * speed;
       tvz = (wz / len) * speed;
     }
 
-    const accel = b.onGround ? (hasInput ? P.groundAccel : P.groundDecel) : (hasInput ? P.airAccel : P.airDecel);
+    let accel = b.onGround ? (hasInput ? P.groundAccel : P.groundDecel) : (hasInput ? P.airAccel : P.airDecel);
+    if (b.pushing && hasInput) accel = Math.min(accel, P.pushForce / P.mass);     // shoving a crate: legs only push so hard
     const dx = tvx - b.vel.x, dz = tvz - b.vel.z;
     const dl = Math.hypot(dx, dz), maxD = accel * h;
     if (dl <= maxD) { b.vel.x = tvx; b.vel.z = tvz; }
@@ -90,7 +94,7 @@ export class Player {
     // jump (with coyote time + input buffer)
     this.coyote = b.onGround ? P.coyoteTime : Math.max(0, this.coyote - h);
     if (this.jumpBuffer > 0 && this.coyote > 0) {
-      b.vel.y = P.jumpSpeed;
+      b.vel.y = P.jumpSpeed / Math.sqrt(1 + P.carrySlow * this.carryMass);     // carrying something heavy: lower jump
       this.jumpBuffer = 0;
       this.coyote = 0;
       b.onGround = false;
@@ -182,7 +186,7 @@ export class Player {
   // Used by multiplayer to place the player at a spawn slot.
   teleport(x, z, yaw = this.targetYaw) {
     const b = this.body;
-    b.pos.set(x, 0, z); b.vel.set(0, 0, 0); b.stepOffset = 0;
+    b.pos.set(x, 0, z); b.vel.set(0, 0, 0); b.stepOffset = 0; b.wake();
     this.yaw = this.targetYaw = yaw;
     this.bodyYaw.snap(yaw);
     b.updateBounds();
