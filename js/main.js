@@ -89,7 +89,6 @@ async function main() {
     const b = hit && hit.body;
     if (!b || !b.dynamic || b.isPlayer || crateSync.indexOf(b) < 0) return;
     if (crateSync.isRemoteOwned(b)) { mpUI.toast('Somebody else is moving that crate', 'info'); return; }
-    if (b.mass > CONFIG.carry.maxMass) { mpUI.toast(`Too heavy to lift (${Math.round(b.mass)} kg) - push it`, 'info'); return; }
     held = b;
     player.carryMass = b.mass;
     b.wake();

@@ -19,7 +19,7 @@ export const CONFIG = {
     airAccel: 6, airDecel: 0.3,                              // in the air you mostly keep your momentum
     jumpSpeed: 4.3, coyoteTime: 0.1, jumpBuffer: 0.12,       // v = sqrt(2 g h): about a 0.94 m jump under real gravity
     pushForce: 1000,                                         // N the legs can push with while shoving a crate (a 130 kg crate on grass barely budges)
-    carrySlow: 0.006,                                        // walking speed is divided by (1 + carrySlow * carried kg)
+    carrySlow: 0.01,                                        // walking speed is divided by (1 + carrySlow * carried kg)
     stepHeight: 0.5,
     spawn: [0, 0, 12],
   },
@@ -43,8 +43,8 @@ export const CONFIG = {
 
   combat: { reach: 2.1, hitboxHalf: 0.5, knockback: 7.5, knockLift: 3.2 },
 
-  // kg. Anything heavier than maxMass can only be pushed. Throws: speed = throwPower / sqrt(kg) (a 10 kg crate flies ~8 m/s).
-  carry: { maxMass: 40, holdGap: 0.95, holdDrop: 0.35, gain: 14, massLag: 0.04, maxSpeed: 14, breakDist: 2.2, throwPower: 26, maxThrow: 14 },
+  // kg. You can lift anything; heavy loads just slow you down (see player.carrySlow). Throws: speed = throwPower / sqrt(kg) (a 10 kg crate flies ~8 m/s).
+  carry: { holdGap: 0.95, holdDrop: 0.35, gain: 14, massLag: 0.04, maxSpeed: 14, breakDist: 2.2, throwPower: 26, maxThrow: 14 },
 
   // Materials. friction = Coulomb coefficient, restitution = bounciness. Pairs combine as sqrt(a*b) and max(a,b).
   materials: {

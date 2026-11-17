@@ -106,7 +106,7 @@ If names change, a geometry-based fallback is used. In the console: `DD.characte
 
 Units are metres / seconds / kilograms. Crates and barrels tumble, tip, topple, slide with Coulomb friction, bounce and
 stack; barrels are real cylinders that roll. Gravity is 9.81 m/s2, the player weighs 75 kg and can only push with ~1000 N,
-so a 130 kg crate barely budges while a 10 kg one flies. Things over 40 kg cannot be lifted; carrying slows you down;
+so a 130 kg crate barely budges while a 10 kg one flies. You can lift anything, but the heavier it is the slower you walk and the lower you jump;
 thrown speed falls with weight; punches hit at the point you aim at, so off-centre hits spin crates.
 Crate orientation and spin are synced between players. Tune everything in `js/config.js` (`physics`, `player`, `carry`,
 `materials`, `interaction`). Tests: `npm test` (`npm run test:physics`, `npm run test:sync` run headless in Node).
