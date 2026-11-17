@@ -1,5 +1,7 @@
 // Delivery Disaster - Express + Socket.IO server (serves the game AND multiplayer).
 'use strict';
+// Load a local .env file if there is one (Node 20.12+); real environment variables (e.g. on Render) always win.
+try { process.loadEnvFile(require('path').join(__dirname, '..', '.env')); } catch (_) { /* no .env file: fine */ }
 const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
