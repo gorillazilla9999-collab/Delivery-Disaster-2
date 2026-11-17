@@ -1,4 +1,4 @@
-// In-room text chat. Enter (or T) opens the box while playing, Enter sends, Esc cancels.
+// In-room text chat. T opens the box while playing, Enter sends, Esc cancels.
 // Messages come back from the server (validated + rate limited) and are drawn as plain text (never HTML).
 const MAX_LINES = 60;       // kept in the log
 const FADE_AFTER = 9000;    // ms a line stays visible when you are not typing
@@ -17,7 +17,7 @@ export class Chat {
 
     addEventListener('keydown', (e) => {
       if (this.open || !this.active || !input.locked || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.code === 'Enter' || e.code === 'KeyT' || e.code === 'Slash') {
+      if (e.code === 'KeyT') {
         e.preventDefault();
         this.show();
       }
