@@ -196,7 +196,7 @@ export function buildWorld({ scene, physics, renderer }) {
     g.fillStyle = 'rgba(0,0,0,.35)';
     for (const y of [0.04, 0.30, 0.70, 0.94]) g.fillRect(0, s * y + 5, s, 2);
     g.fillStyle = '#f4efe2'; g.font = 'bold 15px sans-serif'; g.textAlign = 'center';   // stencil
-    g.fillText('DANGER', s / 2, s * 0.50 - 2);
+    g.fillText('OIL', s / 2, s * 0.50 - 2);
     g.fillStyle = '#f2c230'; g.fillRect(s / 2 - 26, s * 0.54, 52, 5);
     g.fillStyle = 'rgba(20,10,0,.18)';                                   // grime
     for (let i = 0; i < 50; i++) g.fillRect(Math.random() * s, Math.random() * s, 2 + Math.random() * 14, 1);

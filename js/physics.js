@@ -190,6 +190,7 @@ export class Body {
     this.restitution = restitution;
     this.linDamp = 0.04; this.angDamp = 0.25;
     this.isPlayer = false;
+    this.isVehicle = false;   // the drivable car's chassis (set by Vehicle); the crosshair / pick-up code skips it
     this.kinematic = false;   // true = moved by the network (owned by another player): acts like a moving wall
     this.stepHeight = 0;      // > 0 lets the body walk up small ledges (player)
     this.stepOffset = 0;      // visual offset used to smooth step-ups (read by the camera)
@@ -200,6 +201,8 @@ export class Body {
     this.rayIgnore = false;   // raycasts skip this body (carried crate)
     this.sleeping = false; this.sleepT = 0;
     this.parked = false;      // out of play (hidden, no collisions): spawn-pool items and crushed crates
+    this.noCollide = false;   // true = takes part in nothing (a player seated in a vehicle): no contacts, but not parked
+    this.supported = false;   // set by a vehicle whose wheels hold it up: lets a car that never touches the ground fall asleep
     this.world = null;
     this.mesh = null;
     this.updateBounds();
@@ -381,23 +384,28 @@ function collide(A, B, out) {
 }
 
 // ---------- ray casts ----------
-function rayBody(b, o, d, maxDist) {
+// Returns the hit distance (or null). If `nOut` ([x,y,z]) is given it receives the world-space surface normal at the hit.
+function rayBody(b, o, d, maxDist, nOut = null) {
   const R = b.R;
   const rx = o.x - b.c[0], ry = o.y - b.c[1], rz = o.z - b.c[2];
   // into local space: R^T * v
   const lo = [R[0] * rx + R[3] * ry + R[6] * rz, R[1] * rx + R[4] * ry + R[7] * rz, R[2] * rx + R[5] * ry + R[8] * rz];
   const ld = [R[0] * d.x + R[3] * d.y + R[6] * d.z, R[1] * d.x + R[4] * d.y + R[7] * d.z, R[2] * d.x + R[5] * d.y + R[8] * d.z];
   const hy = b.h / 2;
+  const setN = (nx, ny, nz) => {                                   // local normal -> world
+    if (!nOut) return;
+    nOut[0] = R[0] * nx + R[1] * ny + R[2] * nz; nOut[1] = R[3] * nx + R[4] * ny + R[5] * nz; nOut[2] = R[6] * nx + R[7] * ny + R[8] * nz;
+  };
   if (b.kind === 'cyl') {
-    let best = Infinity;
+    let best = Infinity, ln = null;
     const A = ld[0] * ld[0] + ld[2] * ld[2], B = lo[0] * ld[0] + lo[2] * ld[2], C = lo[0] * lo[0] + lo[2] * lo[2] - b.radius * b.radius;
     if (A > 1e-12) {
       const disc = B * B - A * C;
       if (disc >= 0) {
         const t = (-B - Math.sqrt(disc)) / A;
         const y = lo[1] + ld[1] * t;
-        if (t >= 0 && Math.abs(y) <= hy) best = t;
-        else if (C < 0) best = Math.min(best, 0);                 // starting inside
+        if (t >= 0 && Math.abs(y) <= hy) { best = t; ln = [(lo[0] + ld[0] * t) / b.radius, 0, (lo[2] + ld[2] * t) / b.radius]; }
+        else if (C < 0) { best = Math.min(best, 0); ln = [0, 1, 0]; }                 // starting inside
       }
     }
     if (Math.abs(ld[1]) > 1e-9) {
@@ -405,23 +413,27 @@ function rayBody(b, o, d, maxDist) {
         const t = (cy - lo[1]) / ld[1];
         if (t < 0) continue;
         const x = lo[0] + ld[0] * t, z = lo[2] + ld[2] * t;
-        if (x * x + z * z <= b.radius * b.radius && t < best) best = t;
+        if (x * x + z * z <= b.radius * b.radius && t < best) { best = t; ln = [0, cy > 0 ? 1 : -1, 0]; }
       }
     }
-    return best <= maxDist ? best : null;
+    if (best <= maxDist) { if (ln) setN(ln[0], ln[1], ln[2]); return best; }
+    return null;
   }
   const half = [b.hx, hy, b.hz];
-  let tmin = -Infinity, tmax = Infinity;
+  let tmin = -Infinity, tmax = Infinity, ax = 1, sg = 1;
   for (let k = 0; k < 3; k++) {
     const dir = Math.abs(ld[k]) < 1e-9 ? 1e-9 : ld[k], inv = 1 / dir;
     let t1 = (-half[k] - lo[k]) * inv, t2 = (half[k] - lo[k]) * inv;
     if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
-    tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+    if (t1 > tmin) { tmin = t1; ax = k; sg = dir > 0 ? -1 : 1; }          // the face we entered through
+    tmax = Math.min(tmax, t2);
     if (tmin > tmax) return null;
   }
   if (tmax < 0) return null;
   const t = Math.max(tmin, 0);
-  return t <= maxDist ? t : null;
+  if (t > maxDist) return null;
+  if (nOut) { if (tmin < 0) setN(0, 1, 0); else setN(ax === 0 ? sg : 0, ax === 1 ? sg : 0, ax === 2 ? sg : 0); }
+  return t;
 }
 
 // ---------- the world ----------
@@ -520,7 +532,7 @@ export class PhysicsWorld {
     if (b.isPlayer || b.noGravity) { b.sleepT = 0; return; }
     const v2 = b.vel.x * b.vel.x + b.vel.y * b.vel.y + b.vel.z * b.vel.z;
     const w2 = b.angVel.x * b.angVel.x + b.angVel.y * b.angVel.y + b.angVel.z * b.angVel.z;
-    if (v2 < SLEEP_V2 && w2 < SLEEP_W2 && b.onGround) {
+    if (v2 < SLEEP_V2 && w2 < SLEEP_W2 && (b.onGround || b.supported)) {
       b.sleepT += h;
       if (b.sleepT > SLEEP_TIME) { b.sleeping = true; b.vel.set(0, 0, 0); b.angVel.set(0, 0, 0); }
     } else b.sleepT = 0;
@@ -565,7 +577,7 @@ export class PhysicsWorld {
       for (let j = i + 1; j < all.length; j++) {
         const B = all[j];
         if (!A.dynamic && !B.dynamic) continue;
-        if (A.parked || B.parked) continue;
+        if (A.parked || B.parked || A.noCollide || B.noCollide) continue;
         const aAct = A.dynamic && !A.kinematic && !A.sleeping, bAct = B.dynamic && !B.kinematic && !B.sleeping;
         const aMov = A.kinematic && A.vel.length() > 0.02, bMov = B.kinematic && B.vel.length() > 0.02;
         if (!aAct && !bAct && !(aMov && B.sleeping) && !(bMov && A.sleeping)) continue;
@@ -734,17 +746,19 @@ export class PhysicsWorld {
     for (const b of moved) b.updateBounds();
   }
 
-  // Nearest hit among all bodies and the ground plane. Returns {body|null, dist} or null.
-  raycast(origin, dir, maxDist, ignore = null) {
+  // Nearest hit among all bodies and the ground plane. Returns {body|null, dist, normal:[x,y,z]} or null.
+  // `filter(body)` (optional) lets a caller skip bodies, e.g. a vehicle's wheels only look at static scenery.
+  raycast(origin, dir, maxDist, ignore = null, filter = null) {
     let best = null;
+    const n = [0, 1, 0];
     for (const c of this.all) {
-      if (c === ignore || c.rayIgnore || c.parked) continue;
-      const t = rayBody(c, origin, dir, maxDist);
-      if (t !== null && (!best || t < best.dist)) best = { body: c, dist: t };
+      if (c === ignore || c.rayIgnore || c.parked || (filter && !filter(c))) continue;
+      const t = rayBody(c, origin, dir, maxDist, n);
+      if (t !== null && (!best || t < best.dist)) best = { body: c, dist: t, normal: [n[0], n[1], n[2]] };
     }
     if (dir.y < -1e-6) {
       const t = -origin.y / dir.y;
-      if (t >= 0 && t <= maxDist && (!best || t < best.dist)) best = { body: null, dist: t };
+      if (t >= 0 && t <= maxDist && (!best || t < best.dist)) best = { body: null, dist: t, normal: [0, 1, 0] };
     }
     return best;
   }

@@ -47,6 +47,7 @@ export class Net {
     this.onAdmin = () => {};          // (isAdmin)
     this.onRoomUpdate = () => {};     // () room code / lock changed
     this.crateSync = null;            // set by main (CrateSync)
+    this.vehicleSync = null;          // set by main (VehicleSync)
   }
 
   get inRoom() { return !!this.room; }
@@ -157,6 +158,10 @@ export class Net {
     socket.on('crates', (m) => this.crateSync?.onRemote(m));
     socket.on('crates-released', (l) => this.crateSync?.onReleased(l));
     socket.on('crate-impulse', (d) => this.crateSync?.onImpulse(d));
+    socket.on('vehicle-init', (l) => this.vehicleSync?.applyInit(l));
+    socket.on('vehicle-driver', (m) => this.vehicleSync?.onDriver(m));
+    socket.on('vehicle-state', (m) => this.vehicleSync?.onState(m));
+    socket.on('vehicle-denied', (m) => this.vehicleSync?.onDenied(m));
     socket.on('hit', (h) => this.onHit(h));
     socket.on('chat', (m) => { if (this.room) this.onChat(m); });
     socket.on('action', (a) => { const p = this.remotes.players.get(a.id); if (p && a.type === 'poke') p.poke(a.side); });
@@ -314,6 +319,13 @@ export class Net {
 
   sendCrates(entries) { if (this.room && this.socket && this.socket.connected) this.socket.emit('crates', entries); }
   sendCrateImpulse(idx, d, m, p) { if (this.room && this.socket && this.socket.connected) this.socket.emit('crate-impulse', { idx, d, m, p }); }
+
+  // ---- vehicles (the server decides who may drive / control a car) ----
+  vehicleEnter(id) { return this._call('vehicle-enter', { id }, 4000); }
+  vehicleExit(id) { return this._call('vehicle-exit', { id }, 4000); }
+  vehicleClaim(id) { return this._call('vehicle-claim', { id }, 4000); }
+  vehicleRelease(id, s) { return this._call('vehicle-release', { id, s }, 4000); }
+  sendVehicleState(id, s) { if (this.room && this.socket && this.socket.connected) this.socket.emit('vehicle-state', { id, s }); }
 
   sendPunch(targetId) {
     if (this.room && this.socket && this.socket.connected) this.socket.emit('punch', { to: targetId });

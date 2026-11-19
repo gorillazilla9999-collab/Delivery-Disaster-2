@@ -116,4 +116,20 @@ export class Character {
       foot.position.set(rest.x + swing * k, rest.y + lift * k, rest.z);
     });
   }
+
+  // Sitting in a car: hands reach forward to the wheel (and turn it with `steer`), feet go to the pedals.
+  // `amount` 0..1 blends from the normal standing pose (0 leaves the hands and feet exactly where animateFeet / the hand
+  // animation put them, so it is safe to call every frame).
+  poseSeated(amount, steer = 0) {
+    if (amount <= 0.001) return;
+    const k = 1 / this.scale;
+    [this.parts.handR, this.parts.handL].forEach((hand, i) => {
+      const rest = this._handRest[i];
+      hand.position.set(rest.x + 0.34 * k * amount, rest.y + (0.1 + (i ? 1 : -1) * steer * 0.12) * k * amount, rest.z);
+    });
+    [this.parts.footR, this.parts.footL].forEach((foot, i) => {
+      const rest = this._feetRest[i];
+      foot.position.set(rest.x + 0.3 * k * amount, rest.y + 0.12 * k * amount, rest.z);
+    });
+  }
 }

@@ -1,6 +1,7 @@
 // Pure room logic (no sockets in here) so it can be unit-tested.
 'use strict';
 const crypto = require('crypto');
+const vehicles = require('./vehicles');
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I, O, 0, 1
 const CODE_LENGTH = 5;
@@ -53,7 +54,7 @@ class RoomManager {
   create(id, name) {
     if (this.byPlayer.has(id)) return { error: 'ALREADY_IN_ROOM', message: 'Leave your current room first.' };
     const code = this.generateCode();
-    const room = { code, players: new Map(), createdAt: Date.now(), hostId: id, crates: new Map(), locked: false, tokens: new Map() };
+    const room = { code, players: new Map(), createdAt: Date.now(), hostId: id, crates: new Map(), locked: false, tokens: new Map(), vehicles: vehicles.createVehicles() };
     this.rooms.set(code, room);
     return this._add(room, id, name);
   }
@@ -104,6 +105,7 @@ class RoomManager {
     if (!room) return null;
     const player = room.players.get(id);
     const releasedCrates = this.releaseCrates(id, room);
+    const vehicleChanges = [];
     if (player && player.token) {
       if (reason === 'disconnected') room.tokens.set(player.token, Date.now() + REJOIN_GRACE);
       else room.tokens.delete(player.token);
@@ -112,7 +114,8 @@ class RoomManager {
     let closed = false;
     if (room.players.size === 0) { this.rooms.delete(code); closed = true; }
     else if (room.hostId === id) room.hostId = room.players.keys().next().value;
-    return { room, player, closed, releasedCrates };
+    if (!closed) vehicleChanges.push(...vehicles.onLeave(room, id));      // free the seat; a moving car goes to the host to slow down
+    return { room, player, closed, releasedCrates, vehicleChanges };
   }
 
   // ---- host / admin controls ----

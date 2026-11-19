@@ -21,6 +21,8 @@ const express = require('express');
 const compression = require('compression');
 const { Server } = require('socket.io');
 const { RoomManager, PUNCH } = require('./rooms');
+const vehicles = require('./vehicles');
+const { registerVehicleHandlers, broadcastInfo, broadcastChanges } = require('./vehicle-handlers');
 
 const ROOT = path.join(__dirname, '..');
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -96,6 +98,7 @@ io.on('connection', (socket) => {
     socket.join(room.code);
     ack?.({ ok: true, code: room.code, you: socket.id, name: player.name, max: rooms.maxPlayers, locked: room.locked, token: player.token, admin: socket.data.admin });
     socket.emit('crate-init', rooms.crateInit(room));                 // current state of every moved crate
+    socket.emit('vehicle-init', vehicles.init(room));                 // who drives which vehicle, and where each one is
     socket.to(room.code).emit('player-joined', { id: player.id, name: player.name });
     emitRoster(room);
   };
@@ -118,6 +121,7 @@ io.on('connection', (socket) => {
     socket.leave(res.room.code);
     if (!res.closed) {
       if (res.releasedCrates.length) io.to(res.room.code).emit('crates-released', res.releasedCrates);
+      broadcastChanges(io, res.room, res.vehicleChanges);                 // the seat is free again; a moving car goes to the host
       io.to(res.room.code).emit('player-left', { id: socket.id, name: res.player && res.player.name, reason });
       emitRoster(res.room);
     }
@@ -195,6 +199,7 @@ io.on('connection', (socket) => {
     if (target) { target.emit('kicked', { code: res.room.code }); target.leave(res.room.code); }
     if (!res.closed) {
       if (res.releasedCrates.length) io.to(res.room.code).emit('crates-released', res.releasedCrates);
+      broadcastChanges(io, res.room, res.vehicleChanges);
       io.to(res.room.code).emit('player-left', { id, name: res.player && res.player.name, reason: 'kicked' });
       emitRoster(res.room);
     }
@@ -232,6 +237,7 @@ io.on('connection', (socket) => {
       from: socket.id, to: res.target.id, d: res.d, hp: res.hp, ko: res.ko, koMs: PUNCH.koMs,
       fromName: res.attacker.name, toName: res.target.name,
     });
+    if (res.ko) broadcastInfo(io, res.room, vehicles.eject(res.room, res.target.id));      // knocked out of the driver's seat
   });
 
   // crates: only the current owner's updates are accepted; accepted ones are relayed to everybody else in the room
@@ -254,6 +260,8 @@ io.on('connection', (socket) => {
     const p = Array.isArray(d.p) && d.p.length >= 3 ? d.p.slice(0, 3).map((n) => (Number.isFinite(+n) ? Math.max(-200, Math.min(200, +n)) : 0)) : undefined;
     io.to(owner).emit('crate-impulse', { idx, d: v, m: Math.max(0, Math.min(150, Number(d.m) || 0)), p });
   });
+
+  registerVehicleHandlers({ io, socket, rooms });
 
   socket.on('ping-check', (ack) => { if (typeof ack === 'function') ack(Date.now()); });
 });

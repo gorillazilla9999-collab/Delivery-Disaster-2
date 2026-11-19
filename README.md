@@ -1,4 +1,4 @@
-# Delivery Disaster — Prompt 1: Movement + Prompt 2: Online Multiplayer
+# Delivery Disaster — Prompt 1: Movement + Prompt 2: Online Multiplayer + Prompt 3: Drivable car
 
 ## Run it
 ```
@@ -67,6 +67,7 @@ render.yaml, DEPLOY_RENDER.md, .env.example
 | LMB / RMB | punch with left / right hand (shoves crates; punches other players) |
 | E | pick up the crate you're looking at / put it down (hands reach while you hold one) |
 | LMB / RMB while carrying | throw the crate |
+| H | get in / out of the car (see below) |
 | V | third-person debug view (shows head, torso, feet, hands back on the body) |
 
 ## Structure
@@ -121,3 +122,56 @@ Crate orientation and spin are synced between players. Tune everything in `js/co
 - **Spawn tool** (`CONFIG.spawner`): **Q** cycles the item (small / normal / big crate, red / blue barrel), **F** spawns it where you
   look, **X** removes the crate or barrel you look at. Spawned items come from a pre-built pool (6 per type) that exists
   parked on every client, so spawning needs no new network messages: it is just a crate that starts moving.
+
+
+## The car (Prompt 3)
+
+One drivable car, the **Courier Hatch**, parked at (6, 16). Walk up to it and press **H**.
+
+| Key | In the car |
+|---|---|
+| **W** / **S** | accelerate / brake, then reverse (W while rolling backwards brakes first) |
+| **A** / **D** | steer (less lock at speed) |
+| **Space** | handbrake (rear tyres lose grip: handbrake turns and drifts) |
+| **R** | reset: stand an overturned or stuck car back up in a clear spot |
+| **H** | get out (below ~21 km/h, and only where there is room beside the car) |
+| mouse | look around the car; the camera eases back behind it |
+
+**How it works** (`js/vehicle.js`, tuned in `CONFIG.vehicle`): there is no second physics system. The chassis is one dynamic box body in
+the normal `PhysicsWorld`, so it collides with walls, crates, barrels and you through the same solver. Each wheel is a ray cast against
+static scenery; a spring + damper pushes the chassis up (independent per wheel: roll, pitch, bumps, ramps) and a tyre model pushes it
+along and sideways. The tyre model has a slip-angle curve (peak grip, then ~90% when sliding), a friction ellipse (braking or accelerating
+reduces cornering grip) and weight transfer comes for free from the suspension. Understeer, oversteer, drifts and handbrake skids are emergent,
+and a small counter-steer assist keeps a slide catchable. Rough numbers: 1250 kg, 0-100 km/h in ~8 s, 100-0 in ~41 m (0.96 g),
+about 1 g of cornering grip, ~150 km/h top speed.
+
+**Files:** `vehicle.js` (dynamics, runs headless), `vehicle-model.js` (placeholder 3D model: steering + spinning wheels, lights),
+`vehicle-camera.js` (follow camera), `vehicle-hud.js` (speed km/h, R/N/D, handbrake, name), `vehicle-system.js` (H / R, seat,
+camera blend, reset, exit-spot search), `vehicle-sync.js` (network), `course.js` + `course-view.js` (speed bumps and a ramp at x=34..46),
+`server/vehicles.js` + `server/vehicle-handlers.js` (ownership + validation).
+
+**Multiplayer.** The server owns the driver's seat and who may stream the car's state; clients never overwrite each other's car:
+
+- `vehicle-enter` is arbitrated by the server (one driver; you must be near, the car slow, you not knocked out). Simultaneous attempts: exactly one wins.
+- Only the **owner** (the driver) streams the car's full rigid-body state (20 Hz; pose, velocity, steering angle, wheel spin, suspension, lights).
+  Everyone else sees it as a kinematic body behind a 120 ms interpolation buffer, exactly like crates, so it still shoves crates and players on their screens.
+  State from anybody else is dropped and they are told who owns it. Teleports are refused (a reset may move the car <=16 m or home).
+- Other drivers are drawn sitting in the car using the car's own rendered pose, so driver and car can never drift apart.
+- Get out of a moving car and you keep simulating it until it stops, then you release it and everybody snaps to the same final spot.
+  If the driver disconnects the seat is freed at once; a moving car is handed to the host to roll to a halt. Knocked-out drivers are ejected.
+- No new crate messages: the crate channel is untouched.
+
+Audio was not requested for this step, so there is none.
+
+**Tests:** `npm test` also runs `test:vehicle` (physics: grip, braking, drift, collisions, suspension, ramp, reset, exit), `test:vehicle-sync`
+(the real server logic + several simulated clients with latency), `test:vehicle-camera` and `test:vehicle-client` (the glue, run in Node with
+three.js and the DOM stubbed out; it exercises logic, it cannot render).
+
+**Manual checklist (browser, two windows)** - these cannot run in a headless sandbox:
+1. Window A creates a room, B joins. Both see the car at the same place. A: walk up, H. B sees A sitting in it.
+2. A drives; B watches the wheels turn, the front wheels steer, brake lights; the driver stays in the seat.
+3. B walks up and presses H: "Somebody is already driving that". Both press H at the same instant: only one gets in.
+4. A drives into crates/barrels (north of the start) - they fly; try the bumps and the ramp east of the start (x 34..46).
+5. A closes the tab at speed: the car coasts to a stop on the host's screen and B can drive it.
+6. Flip the car (ramp at an angle), press R. Press H beside a wall on both sides: "No room to get out here".
+7. Open DevTools: no console errors; `DD.vehicles` is the debug handle.

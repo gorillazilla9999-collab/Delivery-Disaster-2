@@ -148,3 +148,29 @@ body.menu-open #chat { opacity: 0; }
 #spawner b { color: #ffd23f; letter-spacing: .08em; }
 #spawner i { color: #cfd6dd; font-style: normal; margin-left: 6px; }
 body.menu-open #spawner { opacity: 0; }
+
+/* ---- vehicle ---- */
+#vprompt { position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%); padding: 8px 16px; font-size: 15px; font-weight: 700;
+  color: #1b1b1b; background: #fff6dc; border: 3px solid #1b1b1b; border-radius: 10px; box-shadow: 3px 3px 0 #1b1b1b; pointer-events: none; white-space: nowrap; }
+#vprompt b { display: inline-block; min-width: 24px; padding: 0 6px; text-align: center; background: #ffd23f; border: 2px solid #1b1b1b; border-radius: 5px; }
+body.menu-open #vprompt, body.menu-open #vhud { opacity: 0; }
+#vhud { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); width: 280px; padding: 8px 14px 9px; text-align: center;
+  color: #1b1b1b; background: #fff6dc; border: 3px solid #1b1b1b; border-radius: 12px; box-shadow: 4px 4px 0 #1b1b1b; pointer-events: none; }
+#vh-name { font-size: 11px; font-weight: 700; letter-spacing: .14em; color: #555; }
+#vh-speed { line-height: 1; margin-top: 2px; }
+#vh-kmh { font-size: 52px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+#vh-speed small { margin-left: 6px; font-size: 14px; font-weight: 700; color: #555; }
+#vh-barwrap { height: 8px; margin: 5px 0 7px; background: #fff; border: 2px solid #1b1b1b; border-radius: 6px; overflow: hidden; }
+#vh-bar { height: 100%; width: 0; background: #ffd23f; border-right: 2px solid #1b1b1b; }
+#vh-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+#vh-gears { display: flex; gap: 4px; }
+#vh-gears span { width: 26px; height: 26px; line-height: 21px; font-size: 15px; font-weight: 800; color: #999; background: #fff; border: 3px solid #1b1b1b; border-radius: 6px; }
+#vh-gears span.on { color: #1b1b1b; background: #ffd23f; }
+#vh-gears span#vh-gR.on { background: #ff8a7a; }
+#vh-hb { padding: 2px 8px; font-size: 12px; font-weight: 800; letter-spacing: .06em; color: #aaa; background: #fff; border: 3px solid #1b1b1b; border-radius: 6px; opacity: .55; }
+#vh-hb.on { color: #fff; background: #e8432e; opacity: 1; }
+#vh-flip { margin-top: 7px; padding: 4px 6px; font-size: 13px; font-weight: 700; color: #fff; background: #e8432e; border: 3px solid #1b1b1b; border-radius: 6px; }
+#vh-flip b { padding: 0 5px; color: #1b1b1b; background: #ffd23f; border-radius: 4px; }
+#vh-keys { margin-top: 7px; font-size: 10.5px; color: #555; }
+#vh-keys b { color: #1b1b1b; }
+body.driving #hint, body.driving #spawner, body.driving #crosshair { display: none; }

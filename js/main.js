@@ -15,6 +15,9 @@ import { CrateSync } from './crates-sync.js';
 import { Chat } from './chat.js';
 import { Combat } from './combat.js';
 import { isDanger } from './crusher.js';
+import { VehicleSystem } from './vehicle-system.js';
+import { buildCoursePhysics } from './course.js';
+import { buildCourseView } from './course-view.js';
 
 async function main() {
   const ui = new UI();
@@ -46,6 +49,7 @@ async function main() {
   // --- world + character ---
   const physics = new PhysicsWorld();
   const world = buildWorld({ scene, physics, renderer });
+  buildCoursePhysics(physics); buildCourseView(scene);          // speed bumps + a ramp to drive over (static bodies, same world)
 
   let character;
   try {
@@ -167,6 +171,11 @@ async function main() {
   const crateSync = new CrateSync(world.crates, physics, net);
   const chat = new Chat({ net, input, toast: (t, k) => mpUI.toast(t, k) });
   net.crateSync = crateSync;
+  const vehicles = new VehicleSystem({
+    scene, camera, physics, player, character, hands, input, net, remotes,
+    toast: (t, k) => mpUI.toast(t, k), dropCrate, getSensitivity: () => ui.sensitivity,
+    isDown: () => combat.knockedOut || player.ko,
+  });
 
   net.onStatus = (state, text) => mpUI.setStatus(state, text);
   net.onNotice = (text, kind) => mpUI.toast(text, kind);
@@ -176,13 +185,13 @@ async function main() {
     combat.setActive(!!room);
     chat.setActive(!!room);
     if (room) {
-      if (!info.rejoined) crateSync.resetToHome();     // everybody starts from the same crate layout
-      crateSync.setActive(true);
+      if (!info.rejoined) { crateSync.resetToHome(); vehicles.resetToHome(); }     // everybody starts from the same crate + car layout
+      crateSync.setActive(true); vehicles.setActive(true);
       needSpawn = !info.rejoined;
       if (info.created) mpUI.toast(`Room ${room.code} created - share the code!`, 'join');
       else if (!info.rejoined) mpUI.toast(`Joined room ${room.code}`, 'join');
     } else {
-      crateSync.setActive(false);
+      crateSync.setActive(false); vehicles.setActive(false);
       if (info.left) mpUI.toast('You left the room', 'info');
       if (info.kicked) {
         mpUI.showMessage('You were kicked from the room by an admin.', 'error');
@@ -248,7 +257,7 @@ async function main() {
   ui.showReady();
 
   // debug handles for the console
-  window.DD = { combat, get held() { return held; }, scene, camera, character, hands, player, physics, world, input, net, remotes, crateSync };
+  window.DD = { combat, get held() { return held; }, scene, camera, character, hands, player, physics, world, input, net, remotes, crateSync, vehicles };
 
   // --- main loop ---
   let last = performance.now();
@@ -260,8 +269,10 @@ async function main() {
     if (dt <= 0) return;
 
     // one-shot actions
-    if (input.pressed('KeyV')) player.toggleThirdPerson();
-    const down = combat.knockedOut;                              // knocked out: no actions at all
+    vehicles.frameStart();                                       // H get in / out, R reset, driving keys
+    const driving = vehicles.driving;
+    if (input.pressed('KeyV') && !driving) player.toggleThirdPerson();
+    const down = combat.knockedOut || driving;                   // in the car: no pick-up / spawn / punching                              // knocked out: no actions at all
     if (down && held) dropCrate();
     if (down) { for (const k of ['KeyE', 'Mouse0', 'Mouse2']) input._pressed.delete(k); }
     if (input.pressed('KeyE')) { if (held) dropCrate(); else pickUp(); }
@@ -293,18 +304,24 @@ async function main() {
       if (now - (crusher.lastWarn || 0) > 3000) { crusher.lastWarn = now; mpUI.toast('The crusher flung you out!', 'info'); }
     }
 
+    vehicles.crusherPush(crusher, isDanger(tSync));
+
     // physics in small substeps for stable collisions
     crateSync.beforePhysics(dt);
-    player.beginFrame(dt);
+    vehicles.beforePhysics(dt);
+    if (!driving) player.beginFrame(dt);
     const n = Math.max(1, Math.ceil(dt / CONFIG.physics.maxSubstep));
     const h = dt / n;
     for (let i = 0; i < n; i++) {
-      player.fixedUpdate(h);
+      if (!vehicles.driving) player.fixedUpdate(h);
+      vehicles.fixedUpdate(h);
       if (held) { const off = driveHeld(); if (off > CONFIG.carry.breakDist) { dropCrate(); } }
       physics.step(h);
-      player.afterStep();
+      vehicles.afterStep();
+      if (!vehicles.driving) player.afterStep();
     }
     crateSync.afterPhysics(dt);
+    vehicles.afterPhysics(dt);
     for (const b of crusher.crushed(world.crates)) {                 // pinned under the press: flattened (the owner / host decides)
       if (!crateSync.isAuthority(b)) continue;
       if (b === held) dropCrate();
@@ -316,12 +333,13 @@ async function main() {
     }
 
     // view
-    const view = player.updateView(dt);
+    const view = vehicles.updateView(dt) || player.updateView(dt);       // in the car the vehicle camera drives the view
+    vehicles.applyBlend(dt);                                             // smooth transition when getting in / out
     const hit = physics.raycast(player.eyePos, player.aimDir, CONFIG.interaction.rayLength, player.body);
     const reachDist = hit ? hit.dist : Infinity;
     hands.update(dt, { ...view, reachDist });
 
-    const target = !held && hit && hit.body && hit.body.dynamic && hit.dist <= CONFIG.interaction.reach ? hit.body : null;
+    const target = !held && !vehicles.driving && hit && hit.body && hit.body.dynamic && !hit.body.isVehicle && hit.dist <= CONFIG.interaction.reach ? hit.body : null;
     world.setHighlight(target);
     ui.setReach(!!target);
 

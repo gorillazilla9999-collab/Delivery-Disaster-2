@@ -8,12 +8,18 @@
   "scripts": {
     "start": "node server/server.js",
     "dev": "node --watch server/server.js",
-    "test": "node server/test-rooms.js && node test/physics.test.mjs && node test/sync.test.mjs && node test/crusher.test.mjs",
+    "test": "node server/test-rooms.js && node test/physics.test.mjs && node test/sync.test.mjs && node test/crusher.test.mjs && node test/vehicle.test.mjs && node test/vehicle-sync.test.mjs && node test/vehicle-camera.test.mjs && node --import ./test/stubs/register.mjs test/vehicle-client.test.mjs",
     "test:sync": "node test/sync.test.mjs",
     "test:crusher": "node test/crusher.test.mjs",
-    "test:physics": "node test/physics.test.mjs"
+    "test:physics": "node test/physics.test.mjs",
+    "test:vehicle": "node test/vehicle.test.mjs",
+    "test:vehicle-sync": "node test/vehicle-sync.test.mjs",
+    "test:vehicle-camera": "node test/vehicle-camera.test.mjs",
+    "test:vehicle-client": "node --import ./test/stubs/register.mjs test/vehicle-client.test.mjs"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "compression": "^1.7.4",
     "express": "^4.19.2",

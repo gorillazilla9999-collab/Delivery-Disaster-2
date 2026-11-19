@@ -58,6 +58,9 @@ export class RemotePlayer {
     this.hasState = false;
     this.koUntil = 0; this.koAmt = 0;                  // knocked out: lies on the ground until koUntil (performance.now ms)
     this.root.rotation.order = 'YXZ';
+    this._seatQ = new THREE.Quaternion();
+    this.seat = null;                                  // set every frame by the vehicle system while this player drives: { x, y, z, q:[x,y,z,w], steer }
+    this._seatLast = null; this.seatAmt = 0;           // blend 0..1 between walking and sitting in the car
   }
 
   get isKO() { return performance.now() < this.koUntil; }
@@ -143,6 +146,21 @@ export class RemotePlayer {
     if (this.grounded) this.phase += this.speed * dt * CONFIG.camera.bobFrequency;
     ch.animateFeet(this.phase, this.moveAmt, !this.grounded, dt);
     this._animateHands(dt);
+    this._applySeat(dt);
+  }
+
+  // Driving: the avatar sits in the car and rides with the car's RENDERED pose, so driver and car can never drift apart on screen.
+  _applySeat(dt) {
+    if (this.seat) this._seatLast = this.seat;
+    this.seatAmt += ((this.seat ? 1 : 0) - this.seatAmt) * (1 - Math.exp(-9 * dt));
+    if (this.seatAmt < 0.002) { this.seatAmt = 0; return; }
+    const s = this._seatLast; if (!s) return;
+    const e = this.seatAmt * this.seatAmt * (3 - 2 * this.seatAmt);
+    const root = this.root;
+    root.position.x += (s.x - root.position.x) * e; root.position.y += (s.y - root.position.y) * e; root.position.z += (s.z - root.position.z) * e;
+    root.quaternion.slerp(this._seatQ.set(s.q[0], s.q[1], s.q[2], s.q[3]), e);
+    this.character.poseSeated(e, s.steer || 0);
+    this.tag.position.set(0, P.height + 0.45 - 0.5 * e, 0);
   }
 
   _animateHands(dt) {
