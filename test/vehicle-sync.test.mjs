@@ -43,7 +43,7 @@ function setup(names, { wait = true } = {}) {
     const handlers = {};
     const socket = {
       id, on: (ev, fn) => { handlers[ev] = fn; }, emit: (ev, p) => toClient(id, ev, p),
-      to: (code) => ({ emit: (ev, p) => { const r = rooms.rooms.get(code); for (const o of r.players.keys()) if (o !== id) toClient(o, ev, p); } }),
+      to: (code) => { const api = { emit: (ev, p) => { const r = rooms.rooms.get(code); for (const o of r.players.keys()) if (o !== id) toClient(o, ev, p); } }; api.volatile = api; return api; },
     };
     registerVehicleHandlers({ io, socket, rooms });
     const physics = new PhysicsWorld();

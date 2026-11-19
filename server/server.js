@@ -245,7 +245,11 @@ io.on('connection', (socket) => {
     const room = rooms.roomOf(socket.id);
     if (!room) return;
     const accepted = rooms.crateUpdate(socket.id, entries);
-    if (accepted.length) socket.to(room.code).emit('crates', { t: Date.now(), from: socket.id, c: accepted });
+    if (accepted.length) {
+      // moving-crate updates are streamed (a stale one is useless), so they may be dropped; releases / spawns / parks must arrive
+      const reliable = accepted.some((e) => e[7] === 1);
+      (reliable ? socket.to(room.code) : socket.to(room.code).volatile).emit('crates', { t: Date.now(), from: socket.id, c: accepted });
+    }
   });
 
   // poking a crate somebody else is simulating: forward the impulse to its owner

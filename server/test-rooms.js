@@ -32,6 +32,8 @@ assert.ok(m.setState('B', [1, 0, 2, 0.5, 0, 3, 0, 1], now));
 assert.ok(m.setState('A', [9, 0, 9, 0, 0, 0, 0, 1], now));
 const snapB = m.snapshot(b.room);
 assert.deepStrictEqual(Object.keys(snapB), ['B'], 'room B snapshot only holds B');
+assert.strictEqual(snapB.B.length, 9, 'snapshot entry = 8 state values + the time the server received them');
+assert.ok(snapB.B[8] > 0, 'arrival time is included');
 assert.ok(!('A' in snapB));
 assert.strictEqual(m.snapshot(b.room), null, 'no dirty -> no snapshot');
 

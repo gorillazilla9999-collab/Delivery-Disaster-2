@@ -42,7 +42,7 @@ function registerVehicleHandlers({ io, socket, rooms }) {
     const room = roomOf(rooms, socket);
     if (!room || !d) return;
     const res = V.update(room, socket.id, idOf(d), d.s);
-    if (res.ok) socket.to(room.code).emit('vehicle-state', { t: Date.now(), id: res.vehicle.id, from: socket.id, s: res.s });
+    if (res.ok) socket.to(room.code).volatile.emit('vehicle-state', { t: Date.now(), id: res.vehicle.id, from: socket.id, s: res.s });
     else if (res.error === 'NOT_OWNER') socket.emit('vehicle-denied', { id: idOf(d), owner: (room.vehicles.get(idOf(d)) || {}).owner || null });
     else if (res.error === 'TELEPORT' || res.error === 'RESET_RATE') socket.emit('vehicle-denied', { id: idOf(d), owner: socket.id, resync: room.vehicles.get(idOf(d)) && room.vehicles.get(idOf(d)).s });
   });

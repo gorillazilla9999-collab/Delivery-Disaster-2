@@ -29,7 +29,11 @@ export class Net {
     this.maxPlayers = 12;
     this.session = null;              // { code, name } remembered for auto-rejoin after a dropped connection
     this.everConnected = false;
-    this._offset = null;              // ms: local clock minus server clock (min-latency estimate)
+    this._offset = null;              // ms: local clock minus server clock (taken from the fastest recent packets)
+    this._offsetSamples = [];         // recent (clock difference + latency) samples, ~5 s worth
+    this._jitterMean = 0;             // ms: how much later than the fastest packets typical ones arrive
+    this._jitterDev = 0;
+    this._delay = INTERP_DELAY;       // s: how far in the past we draw remote things (grows with jitter, so a bad connection buffers more)
     this._lastSent = null;
     this._lastSendAt = 0;
     this._pendingPings = 0;
@@ -102,7 +106,7 @@ export class Net {
 
     socket.on('hello', (h) => {
       if (h.maxPlayers) this.maxPlayers = h.maxPlayers;
-      this._noteServerTime(h.serverTime, true);
+      this._noteServerTime(h.serverTime);
     });
 
     socket.on('connect_error', (err) => {
@@ -179,14 +183,24 @@ export class Net {
   }
 
   // ---- clock ----
-  _noteServerTime(serverMs, force) {
+  _noteServerTime(serverMs) {
     const sample = Date.now() - serverMs;                 // = clock difference + latency
-    if (this._offset === null || force && sample < this._offset) this._offset = sample;
-    else if (sample < this._offset) this._offset = sample;
-    else this._offset += (sample - this._offset) * 0.01;  // creeps up slowly to follow clock drift
+    const w = this._offsetSamples;
+    w.push(sample); if (w.length > 100) w.shift();
+    let min = Infinity; for (let i = 0; i < w.length; i++) if (w[i] < min) min = w[i];
+    // follow the fastest recent packets, but never jump: a smooth clock means smooth motion
+    if (this._offset === null) this._offset = min;
+    else this._offset += Math.max(-2, Math.min(2, min - this._offset));
+    // jitter = how late the typical packet is compared with the best one; the buffer has to cover it
+    const late = Math.max(0, sample - min);
+    this._jitterMean += (late - this._jitterMean) * 0.05;
+    this._jitterDev += (Math.abs(late - this._jitterMean) - this._jitterDev) * 0.05;
+    const target = Math.min(0.4, Math.max(INTERP_DELAY, 0.05 + (this._jitterMean + 2.5 * this._jitterDev) / 1000));
+    // grow quickly (avoid running dry), shrink slowly (avoid visible speed-ups)
+    this._delay += target > this._delay ? Math.min(target - this._delay, 0.004) : Math.max(target - this._delay, -0.0005);
   }
   serverNowSec() { return (Date.now() - (this._offset ?? 0)) / 1000; }
-  renderTimeSec() { return this.serverNowSec() - INTERP_DELAY; }
+  renderTimeSec() { return this.serverNowSec() - this._delay; }
 
   // ---- rooms ----
   createRoom(name) { return this._enter('create-room', { name }); }
@@ -294,7 +308,8 @@ export class Net {
     for (const id in snap.p) {
       if (id === this.myId) continue;
       const rp = this.remotes.players.get(id);
-      if (rp) rp.pushSnapshot(t, snap.p[id]);
+      const s = snap.p[id];
+      if (rp) rp.pushSnapshot(typeof s[8] === 'number' && s[8] > 0 ? s[8] / 1000 : t, s);   // s[8] = when the server received this sample
     }
   }
 
@@ -303,7 +318,7 @@ export class Net {
   sendState(st) {
     if (!this.room || !this.socket || !this.socket.connected) return;
     const now = performance.now();
-    if (now - this._lastSendAt < SEND_INTERVAL) return;
+    if (now - this._lastSendAt < SEND_INTERVAL - 8) return;     // frames are 16.7 ms apart: without the slack 50 ms rounds up to 67 ms (15 Hz, uneven)
     const yaw = Math.atan2(Math.sin(st.yaw), Math.cos(st.yaw));
     const pkt = [r3(st.x), r3(st.y), r3(st.z), r3(yaw), r3(st.pitch), r3(st.speed), r3(st.vy), (st.grounded ? 1 : 0) | (st.reaching ? 2 : 0)];
     const l = this._lastSent;
@@ -317,7 +332,11 @@ export class Net {
     this.socket.volatile.emit('state', pkt);
   }
 
-  sendCrates(entries) { if (this.room && this.socket && this.socket.connected) this.socket.emit('crates', entries); }
+  sendCrates(entries) {
+    if (!this.room || !this.socket || !this.socket.connected) return;
+    // releases / spawns / parks (entry[7] === 1) must arrive; a plain moving-crate update may be dropped
+    if (entries.some((e) => e[7] === 1)) this.socket.emit('crates', entries); else this.socket.volatile.emit('crates', entries);
+  }
   sendCrateImpulse(idx, d, m, p) { if (this.room && this.socket && this.socket.connected) this.socket.emit('crate-impulse', { idx, d, m, p }); }
 
   // ---- vehicles (the server decides who may drive / control a car) ----
@@ -325,7 +344,7 @@ export class Net {
   vehicleExit(id) { return this._call('vehicle-exit', { id }, 4000); }
   vehicleClaim(id) { return this._call('vehicle-claim', { id }, 4000); }
   vehicleRelease(id, s) { return this._call('vehicle-release', { id, s }, 4000); }
-  sendVehicleState(id, s) { if (this.room && this.socket && this.socket.connected) this.socket.emit('vehicle-state', { id, s }); }
+  sendVehicleState(id, s) { if (this.room && this.socket && this.socket.connected) this.socket.volatile.emit('vehicle-state', { id, s }); }
 
   sendPunch(targetId) {
     if (this.room && this.socket && this.socket.connected) this.socket.emit('punch', { to: targetId });

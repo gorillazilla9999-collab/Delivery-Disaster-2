@@ -177,6 +177,7 @@ class RoomManager {
     if (!p || !Array.isArray(s) || s.length < 8) return false;
     if (now - p.lastStateAt < 20) return false;            // rate limit ~50/s
     p.lastStateAt = now;
+    p.stateAt = now;                                         // when this sample arrived (sent with the snapshot so clients interpolate on the right timeline)
     p.state = [
       clampNum(s[0], -WORLD_LIMIT, WORLD_LIMIT),
       clampNum(s[1], -50, 200),
@@ -289,7 +290,7 @@ class RoomManager {
     const out = {};
     let any = false;
     for (const p of room.players.values()) {
-      if (p.state && p.dirty) { out[p.id] = p.state; p.dirty = false; any = true; }
+      if (p.state && p.dirty) { out[p.id] = p.state.concat(p.stateAt || 0); p.dirty = false; any = true; }   // [..8 values, arrival time ms]
     }
     return any ? out : null;
   }
